@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Serenity.Net.Web</AssemblyName>
+    <TargetFramework>net10.0</TargetFramework>
+    <Title>Serenity Platform - Asp.Net Core Web Library</Title>
+    <Description>Contains Web application related types...</Description>
+    <DefaultItemExcludes>$(DefaultItemExcludes);MutexExecTask.cs;RestoreNodeTypesTask.cs;Serenity.Net.Web.targets</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\services\Serenity.Net.Services.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="NUglify" Version="1.22.4" />
+    <None Include=".\*Task.cs;.\Serenity.Net.Web.targets" Pack="true" PackagePath="build" />
+  </ItemGroup>
+</Project>

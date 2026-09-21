@@ -1,0 +1,912 @@
+﻿import { bindThis } from "@serenity-is/domwise";
+import { Column, FormatterContext, GridOptions, type FormatterResult } from "@serenity-is/sleekgrid";
+import { CheckTreeEditorTexts, Culture, Fluent, ListResponse, nsSerenity, type Lookup, type PropertyItem } from "../../base";
+import { ScriptData, getLookup } from "../../compat";
+import { IGetEditValue, IReadOnly, ISetEditValue } from "../../interfaces";
+import { DataGrid } from "../datagrid/datagrid";
+import { GridSelectAllButtonHelper } from "../helpers/gridselectallbuttonhelper";
+import { GridUtils } from "../helpers/gridutils";
+import { SlickFormatting } from "../helpers/slickformatting";
+import { SlickTreeHelper } from "../helpers/slicktreehelper";
+import { ToolButton } from "../widgets/toolbar";
+import { Widget } from "../widgets/widget";
+import { CascadedWidgetLink } from "./cascadedwidgetlink";
+import { stripDiacritics } from "./combobox";
+import { EditorUtils } from "./editorutils";
+import { EditorProps } from "./editorwidget";
+
+/**
+ * A single item in a check tree editor.
+ * @typeParam TSource - The source item type.
+ */
+export interface CheckTreeItem<TSource> {
+    /** Whether the item is selected. */
+    isSelected?: boolean;
+    /** Whether to hide the checkbox for this item. */
+    hideCheckBox?: boolean;
+    /** Whether all descendants are selected. */
+    isAllDescendantsSelected?: boolean;
+    /** Unique identifier of the tree item, used as the node key and selection value. */
+    id?: string;
+    /** Display text. */
+    text?: string;
+    /** Parent item id. */
+    parentId?: string;
+    /** Child items. */
+    children?: CheckTreeItem<TSource>[];
+    /** The source item. */
+    source?: TSource;
+}
+
+/**
+ * A grid-based editor that renders a hierarchical tree of checkboxes.
+ * @typeParam TItem - The tree item type.
+ * @typeParam P - Widget props type.
+ */
+export class CheckTreeEditor<TItem extends CheckTreeItem<TItem>, P = {}> extends DataGrid<TItem, P>
+    implements IGetEditValue, ISetEditValue, IReadOnly {
+    static override[Symbol.typeInfo] = this.registerEditor(nsSerenity, [IGetEditValue, ISetEditValue, IReadOnly]);
+
+    /** Creates the default div element for the check tree editor.
+     * @returns The div element. */
+    static override createDefaultElement() { return document.createElement("div"); }
+
+    declare private itemById: { [key: string]: TItem };
+
+    /**
+     * Creates a check tree editor.
+     * @param props - Widget props.
+     */
+    constructor(props: EditorProps<P>) {
+        super(props);
+
+        this.domNode.classList.add('s-CheckTreeEditor');
+        this.updateItems();
+    }
+
+    /**
+     * Returns the id property name.
+     * @returns "id".
+     */
+    protected override getIdProperty() {
+        return "id";
+    }
+
+    /**
+     * Returns the tree items to display.
+     * @returns The tree items.
+     */
+    protected getTreeItems(): TItem[] {
+        return [];
+    }
+
+    /**
+     * Loads the tree items into the view.
+     */
+    protected updateItems(): void {
+        const items = this.getTreeItems();
+        const itemById: Record<any, TItem> = Object.create(null) as any;
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            item.children = [];
+            if (item.id) {
+                itemById[item.id] = item;
+            }
+            if (item.parentId) {
+                const parent = itemById[item.parentId];
+                if (parent != null) {
+                    parent.children.push(item);
+                }
+            }
+        }
+        this.view.addData({ Entities: items, Skip: 0, Take: 0, TotalCount: items.length });
+        this.updateSelectAll();
+        this.updateFlags();
+    }
+
+    /**
+     * Gets the edit value into a target object.
+     * @param property - The property item.
+     * @param target - The target object.
+     */
+    getEditValue(property: PropertyItem, target: any): void {
+        if (this.getDelimited())
+            target[property.name] = this.get_value().join(",");
+        else
+            target[property.name] = this.get_value();
+    }
+
+    /**
+     * Sets the edit value from a source object.
+     * @param source - The source object.
+     * @param property - The property item.
+     */
+    setEditValue(source: any, property: PropertyItem): void {
+        const value = source[property.name];
+        this.set_value(value);
+    }
+
+    /**
+     * Returns the toolbar buttons for the editor.
+     * @returns Tool button definitions.
+     */
+    protected override getButtons(): ToolButton[] {
+        const selectAllText = this.getSelectAllText();
+        if (!selectAllText) {
+            return null;
+        }
+
+        const self = this;
+        const buttons: ToolButton[] = [];
+        buttons.push(GridSelectAllButtonHelper.define(function () {
+            return self;
+        }, function (x) {
+            return x.id;
+        }, function (x1) {
+            return x1.isSelected;
+        }, (x2, v) => {
+            if (x2.isSelected !== v) {
+                x2.isSelected = v;
+                this.itemSelectedChanged(x2);
+            }
+        }, null, () => {
+            this.updateFlags();
+        }));
+
+        return buttons;
+    }
+
+    /**
+     * Hook invoked when an item's selection changes.
+     * @param item - The item.
+     */
+    protected itemSelectedChanged(item: TItem): void {
+    }
+
+    /**
+     * Returns the text for the select-all button.
+     * @returns The select-all text.
+     */
+    protected getSelectAllText(): string {
+        return CheckTreeEditorTexts.asTry().SelectAll ?? 'Select All';
+    }
+
+    /**
+     * Whether the tree uses a three-state hierarchy.
+     * @returns True when three-state.
+     */
+    protected isThreeStateHierarchy(): boolean {
+        return false;
+    }
+
+    /**
+     * Initializes the grid with tree-specific styling.
+     */
+    protected override initSleekGrid() {
+        this.domNode.classList.add("slick-no-cell-border", "slick-no-odd-even", "slick-hide-header");
+
+        super.initSleekGrid();
+
+        this.sleekGrid.resizeCanvas();
+    }
+
+    /**
+     * Filters view items for the tree hierarchy.
+     * @param item - The item to filter.
+     * @returns True when the item matches.
+     */
+    protected override onViewFilter(item: TItem): boolean {
+        if (!super.onViewFilter(item)) {
+            return false;
+        }
+
+        const items = this.view.getItems();
+        const self = this;
+        return SlickTreeHelper.filterCustom(item, function (x) {
+            if (x.parentId == null) {
+                return null;
+            }
+
+            if (self.itemById == null) {
+                self.itemById = Object.create(null);
+                for (let i = 0; i < items.length; i++) {
+                    const o = items[i];
+                    if (o.id != null) {
+                        self.itemById[o.id] = o;
+                    }
+                }
+            }
+
+            return self.itemById[x.parentId];
+        });
+    }
+
+    /**
+     * Returns the initial collapse state for tree rows.
+     * @returns True when collapsed.
+     */
+    protected getInitialCollapse(): boolean {
+        return false;
+    }
+
+    /**
+     * Processes the list response, setting tree indents.
+     * @param response - The list response.
+     * @returns The processed response.
+     */
+    protected override onViewProcessData(response: ListResponse<TItem>): ListResponse<TItem> {
+        response = super.onViewProcessData(response);
+        this.itemById = null;
+        SlickTreeHelper.setIndents(response.Entities, function (x) {
+            return x.id;
+        }, function (x1) {
+            return x1.parentId;
+        }, this.getInitialCollapse());
+        return response;
+    }
+
+    /**
+     * Handles cell clicks, toggling checkboxes and tree expansion.
+     * @param e - Click event.
+     * @param row - Row index.
+     * @param cell - Cell index.
+     */
+    protected override onClick(e: Event, row: number, cell: number): void {
+        super.onClick(e, row, cell);
+
+        if (!Fluent.isDefaultPrevented(e)) {
+            SlickTreeHelper.toggleClick(e as any, row, cell, this.view, function (x) {
+                return x.id;
+            });
+        }
+
+        if (Fluent.isDefaultPrevented(e)) {
+            return;
+        }
+
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('check-box')) {
+            e.preventDefault();
+
+            if (this._readOnly)
+                return;
+
+            const checkedOrPartial = target.classList.contains('checked') || target.classList.contains('partial');
+            const item = this.itemAt(row);
+            let anyChanged = item.isSelected !== !checkedOrPartial;
+            this.view.beginUpdate();
+            try {
+                if (item.isSelected !== !checkedOrPartial) {
+                    item.isSelected = !checkedOrPartial;
+                    this.view.updateItem(item.id, item);
+                    this.itemSelectedChanged(item);
+                }
+                anyChanged = this.setAllSubTreeSelected(item, item.isSelected) || anyChanged;
+                this.updateSelectAll();
+                this.updateFlags();
+            }
+            finally {
+                this.view.endUpdate();
+            }
+            if (anyChanged) {
+                Fluent.trigger(this.domNode, "change");
+            }
+        }
+    }
+
+    /**
+     * Updates the select-all button state.
+     */
+    protected updateSelectAll(): void {
+        GridSelectAllButtonHelper.update(this, function (x) {
+            return x.isSelected;
+        });
+    }
+
+    /**
+     * Updates the selection flags for all items.
+     */
+    protected updateFlags(): void {
+        const view = this.view;
+        const items = view.getItems();
+        const threeState = this.isThreeStateHierarchy();
+        if (!threeState) {
+            return;
+        }
+        view.beginUpdate();
+        try {
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.children == null || item.children.length === 0) {
+                    const allsel = this.getDescendantsSelected(item);
+                    if (allsel !== item.isAllDescendantsSelected) {
+                        item.isAllDescendantsSelected = allsel;
+                        view.updateItem(item.id, item);
+                    }
+                    continue;
+                }
+                const allSelected = this.allDescendantsSelected(item);
+                const selected = allSelected || this.anyDescendantsSelected(item);
+                if (allSelected !== item.isAllDescendantsSelected || selected !== item.isSelected) {
+                    const selectedChange = item.isSelected !== selected;
+                    item.isAllDescendantsSelected = allSelected;
+                    item.isSelected = selected;
+                    view.updateItem(item.id, item);
+                    if (selectedChange) {
+                        this.itemSelectedChanged(item);
+                    }
+                }
+            }
+        }
+        finally {
+            view.endUpdate();
+        }
+    }
+
+    /**
+     * Whether all descendants of an item are selected.
+     * @param item - The item.
+     * @returns True when all descendants are selected.
+     */
+    protected getDescendantsSelected(item: TItem): boolean {
+        return true;
+    }
+
+    /**
+     * Sets the selection state of all descendants of an item.
+     * @param item - The item.
+     * @param selected - The selection state.
+     * @returns True when any item changed.
+     */
+    protected setAllSubTreeSelected(item: TItem, selected: boolean): boolean {
+        let result = false;
+        for (let i = 0; i < item.children.length; i++) {
+            const sub = item.children[i];
+            if (sub.isSelected !== selected) {
+                result = true;
+                sub.isSelected = selected;
+                this.view.updateItem(sub.id, sub as TItem);
+                this.itemSelectedChanged(sub as TItem);
+            }
+            if (sub.children.length > 0) {
+                result = this.setAllSubTreeSelected(sub as TItem, selected) || result;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Whether all items are selected.
+     * @returns True when all items are selected.
+     */
+    protected allItemsSelected() {
+        for (let i = 0; i < this.rowCount(); i++) {
+            const row = this.itemAt(i);
+            if (!row.isSelected) {
+                return false;
+            }
+        }
+
+        return this.rowCount() > 0;
+    }
+
+    /**
+     * Whether all descendants of an item are selected.
+     * @param item - The item.
+     * @returns True when all descendants are selected.
+     */
+    protected allDescendantsSelected(item: TItem): boolean {
+        if (item.children.length > 0) {
+            for (let i = 0; i < item.children.length; i++) {
+                const sub = item.children[i];
+                if (!sub.isSelected) {
+                    return false;
+                }
+
+                if (!this.allDescendantsSelected(sub as TItem)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Returns whether the value is delimited.
+     * @returns True when delimited.
+     */
+    protected getDelimited() {
+        return !!((this.options as any)['delimited']);
+    }
+
+    /**
+     * Whether any descendant of an item is selected.
+     * @param item - The item.
+     * @returns True when any descendant is selected.
+     */
+    protected anyDescendantsSelected(item: TItem): boolean {
+        if (item.children.length > 0) {
+            for (let i = 0; i < item.children.length; i++) {
+                const sub = item.children[i];
+                if (sub.isSelected) {
+                    return true;
+                }
+                if (this.anyDescendantsSelected(sub as TItem)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Creates the grid columns for the tree.
+     * @returns The columns.
+     */
+    protected override createColumns(): Column[] {
+        const self = this;
+        const columns: Column[] = [];
+        columns.push({
+            field: 'text', name: 'Record', width: 80, format: SlickFormatting.treeToggle(function () {
+                return self.view;
+            }, function (x) {
+                return x.id;
+            }, ctx => {
+                const item = ctx.item;
+                if (item.hideCheckBox) {
+                    return this.getItemText(ctx);
+                }
+                const threeState = this.isThreeStateHierarchy();
+                return <>
+                    <span class={["check-box", item.isSelected && (threeState && !item.isAllDescendantsSelected ? "partial" : "checked"), this._readOnly && "readonly"]}></span>
+                    {this.getItemText(ctx)}
+                </>;
+            })
+        });
+        return columns;
+    }
+
+    /**
+     * Returns the display text for an item.
+     * @param ctx - The formatter context.
+     * @returns The item text.
+     */
+    protected getItemText(ctx: FormatterContext): FormatterResult {
+        return ctx.escape();
+    }
+
+    /**
+     * Returns the grid options for the editor.
+     * @returns Grid options.
+     */
+    protected override getSlickOptions(): GridOptions {
+        const opt = super.getSlickOptions();
+        opt.forceFitColumns = true;
+        return opt;
+    }
+
+    /**
+     * Sorts items, moving selected items to the top.
+     */
+    protected sortItems(): void {
+        if (!this.moveSelectedUp()) {
+            return;
+        }
+        const oldIndexes: Record<string, number> = Object.create(null);
+        const list = this.view.getItems();
+        let i = 0;
+        for (let $t1 = 0; $t1 < list.length; $t1++) {
+            const x = list[$t1];
+            oldIndexes[x.id] = i++;
+        }
+        list.sort(function (x1, y) {
+            if (x1.isSelected && !y.isSelected) {
+                return -1;
+            }
+            if (y.isSelected && !x1.isSelected) {
+                return 1;
+            }
+            const c = Culture.stringCompare(x1.text, y.text);
+            if (c !== 0) {
+                return c;
+            }
+            return oldIndexes[x1.id] < oldIndexes[y.id] ? -1 : (oldIndexes[x1.id] > oldIndexes[y.id] ? 1 : 0);
+        });
+
+        this.view.setItems(list, true);
+    }
+
+    /**
+     * Whether selected items should be moved to the top.
+     * @returns True when moving selected items up.
+     */
+    protected moveSelectedUp(): boolean {
+        return false;
+    }
+
+    declare private _readOnly: boolean;
+
+    /**
+     * Returns whether the editor is read-only.
+     * @returns True when read-only.
+     */
+    public override get_readOnly() {
+        return this._readOnly;
+    }
+
+    /**
+     * Sets whether the editor is read-only.
+     * @param value - True to enable read-only mode.
+     */
+    public override set_readOnly(value: boolean) {
+        if (!!this._readOnly != !!value) {
+            this._readOnly = !!value;
+            this.view.refresh();
+        }
+    }
+
+    private get_value(): string[] {
+        const list = [];
+        const items = this.view.getItems();
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].isSelected) {
+                list.push(items[i].id);
+            }
+        }
+        return list;
+    }
+
+    /** Returns the selected item ids.
+     * @returns Array of selected ids. */
+    public get value() {
+        return this.get_value();
+    }
+
+    /** Sets the selected item ids.
+     * @param value - Comma-delimited string or array of ids to select. */
+    private set_value(value: string | string[]) {
+
+        const selected: Record<string, boolean> = Object.create(null);
+        if (value != null) {
+            if (typeof value == "string") {
+                value = value.split(',')
+                    .map(x => x?.trim())
+                    .filter(x => !!x);
+            }
+
+            for (let i = 0; i < value.length; i++) {
+                selected[value[i]] = true;
+            }
+        }
+
+        this.view.beginUpdate();
+        try {
+            const items = this.view.getItems();
+            for (let i1 = 0; i1 < items.length; i1++) {
+                const item = items[i1];
+                const select = selected[item.id];
+                if (select !== item.isSelected) {
+                    item.isSelected = select;
+                    this.view.updateItem(item.id, item);
+                }
+            }
+            this.updateSelectAll();
+            this.updateFlags();
+            this.sortItems();
+        }
+        finally {
+            this.view.endUpdate();
+        }
+    }
+
+    /** Sets the selected item ids.
+     * @param v - Array of ids to select. */
+    public set value(v: string[]) {
+        this.set_value(v);
+    }
+}
+
+/**
+ * Options for the {@link CheckLookupEditor}.
+ */
+export interface CheckLookupEditorOptions {
+    /** Lookup key for the source lookup. */
+    lookupKey?: string;
+    /** Whether to move checked items to the top of the list. */
+    checkedOnTop?: boolean;
+    /** Whether to show the select-all toolbar button. */
+    showSelectAll?: boolean;
+    /** Whether to hide the quick search box. */
+    hideSearch?: boolean;
+    /** Whether the edit value is a comma-delimited string. */
+    delimited?: boolean;
+    /** Id of the parent editor to cascade from. */
+    cascadeFrom?: string;
+    /** Field name in the lookup used for cascading. */
+    cascadeField?: string;
+    /** Current cascade value used to filter items. */
+    cascadeValue?: any;
+    /** Field name in the lookup used for filtering. */
+    filterField?: string;
+    /** Current filter value used to filter items. */
+    filterValue?: any;
+}
+
+/**
+ * A {@link CheckTreeEditor} that populates its tree from a lookup, with optional cascading, filtering and search.
+ * @typeParam TItem - The lookup item type.
+ * @typeParam P - Widget props type.
+ */
+export class CheckLookupEditor<TItem extends CheckTreeItem<TItem> = any, P extends CheckLookupEditorOptions = CheckLookupEditorOptions> extends CheckTreeEditor<CheckTreeItem<TItem>, P> {
+    static override[Symbol.typeInfo] = this.registerEditor(nsSerenity);
+
+    declare private searchText: string;
+    declare private enableUpdateItems: boolean;
+    declare private lookupChangeOff: any;
+
+    /**
+     * Creates a check lookup editor.
+     * @param props - Widget props.
+     */
+    constructor(props: EditorProps<P>) {
+        super(props);
+
+        this.enableUpdateItems = true;
+        this.setCascadeFrom(this.options.cascadeFrom);
+        this.updateItems();
+        this.lookupChangeOff = ScriptData.bindToChange('Lookup.' + this.getLookupKey(), bindThis(this).updateItems);
+    }
+
+    /**
+     * Cleans up lookup change handlers and delegates to the base destroy.
+     */
+    public override destroy(): void {
+        if (this.lookupChangeOff) {
+            this.lookupChangeOff();
+            this.lookupChangeOff = null;
+        }
+
+        super.destroy();
+    }
+
+    protected override updateItems() {
+        if (this.enableUpdateItems)
+            super.updateItems();
+    }
+
+    protected getLookupKey() {
+        return this.options.lookupKey;
+    }
+
+    protected override getButtons(): ToolButton[] {
+        return super.getButtons() ?? (this.options.hideSearch ? null : []);
+    }
+
+    protected override createToolbarExtensions() {
+        super.createToolbarExtensions();
+
+        GridUtils.addQuickSearch({
+            container: this.toolbar.domNode,
+            search: ({ query, done }) => {
+                this.searchText = stripDiacritics(query || '').toUpperCase();
+                this.view.setItems(this.view.getItems(), true);
+                done(this.rowCount() > 0);
+            }
+        });
+    }
+
+    protected override getSelectAllText(): string {
+        if (!this.options.showSelectAll)
+            return null;
+
+        return super.getSelectAllText();
+    }
+
+    protected cascadeItems(items: TItem[]) {
+
+        const val = this.get_cascadeValue();
+
+        if (val == null || val === '') {
+
+            if (this.get_cascadeField()) {
+                return [];
+            }
+
+            return items;
+        }
+
+        const key = val.toString();
+        const fld = this.get_cascadeField();
+
+        return items.filter(x => {
+            const itemKey = (x as any)[fld];
+            return !!(itemKey != null && itemKey.toString() === key);
+        });
+    }
+
+    protected filterItems(items: TItem[]) {
+        const val = this.get_filterValue();
+
+        if (val == null || val === '') {
+            return items;
+        }
+
+        const key = val.toString();
+        const fld = this.get_filterField();
+
+        return items.filter(x => {
+            const itemKey = (x as any)[fld];
+            return !!(itemKey != null && itemKey.toString() === key);
+        });
+    }
+
+    protected getLookupItems(lookup: Lookup<TItem>): TItem[] {
+        return this.filterItems(this.cascadeItems(lookup.items));
+    }
+
+    protected override getTreeItems() {
+        const lookup = getLookup<TItem>(this.options.lookupKey);
+        const items = this.getLookupItems(lookup);
+        return items.map(item => ({
+            id: ((item as any)[lookup.idField] ?? "").toString(),
+            text: ((item as any)[lookup.textField] ?? "").toString(),
+            source: item
+        } satisfies CheckTreeItem<TItem>));
+    }
+
+    protected override onViewFilter(item: CheckTreeItem<TItem>) {
+        return super.onViewFilter(item) &&
+            (!this.searchText || stripDiacritics(item.text || '')
+                .toUpperCase().indexOf(this.searchText) >= 0);
+    }
+
+    protected override moveSelectedUp(): boolean {
+        return this.options.checkedOnTop;
+    }
+
+    protected get_cascadeFrom(): string {
+        return this.options.cascadeFrom;
+    }
+
+    /** Returns the id of the parent editor to cascade from.
+     * @returns The cascade source id. */
+    get cascadeFrom(): string {
+        return this.get_cascadeFrom();
+    }
+
+    protected getCascadeFromValue(parent: Widget<any>) {
+        return EditorUtils.getValue(parent);
+    }
+
+    declare protected cascadeLink: CascadedWidgetLink<Widget<any>>;
+
+    protected setCascadeFrom(value: string) {
+
+        if (!value) {
+            if (this.cascadeLink != null) {
+                this.cascadeLink.set_parentID(null);
+                this.cascadeLink = null;
+            }
+            this.options.cascadeFrom = null;
+            return;
+        }
+
+        this.cascadeLink = new CascadedWidgetLink<Widget<any>>(Widget, this, p => {
+            this.set_cascadeValue(this.getCascadeFromValue(p));
+        });
+
+        this.cascadeLink.set_parentID(value);
+        this.options.cascadeFrom = value;
+    }
+
+    /** Sets the cascade source.
+     * @param value - Id of the parent editor to cascade from. */
+    protected set_cascadeFrom(value: string) {
+        if (value !== this.options.cascadeFrom) {
+            this.setCascadeFrom(value);
+            this.updateItems();
+        }
+    }
+
+    /** Sets the cascade source.
+     * @param value - Id of the parent editor to cascade from. */
+    set cascadeFrom(value: string) {
+        this.set_cascadeFrom(value);
+    }
+
+    protected get_cascadeField() {
+        return (this.options.cascadeField ?? this.options.cascadeFrom);
+    }
+
+    /** Returns the field name used for cascading.
+     * @returns The cascade field. */
+    get cascadeField(): string {
+        return this.get_cascadeField();
+    }
+
+    /** Sets the field name used for cascading.
+     * @param value - The cascade field name. */
+    protected set_cascadeField(value: string) {
+        this.options.cascadeField = value;
+    }
+
+    /** Sets the field name used for cascading.
+     * @param value - The cascade field name. */
+    set cascadeField(value: string) {
+        this.set_cascadeField(value);
+    }
+
+    protected get_cascadeValue(): any {
+        return this.options.cascadeValue;
+    }
+
+    /** Returns the current cascade filter value.
+     * @returns The cascade value. */
+    get cascadeValue(): any {
+        return this.get_cascadeValue();
+    }
+
+    /** Sets the cascade filter value and refreshes items.
+     * @param value - The cascade value to set. */
+    protected set_cascadeValue(value: any) {
+        if (this.options.cascadeValue !== value) {
+            this.options.cascadeValue = value;
+            this.value = [];
+            this.updateItems();
+        }
+    }
+
+    /** Sets the cascade filter value.
+     * @param value - The cascade value to set. */
+    set cascadeValue(value: any) {
+        this.set_cascadeValue(value);
+    }
+
+    protected get_filterField() {
+        return this.options.filterField;
+    }
+
+    /** Returns the field name used for filtering.
+     * @returns The filter field. */
+    get filterField(): string {
+        return this.get_filterField();
+    }
+
+    /** Sets the field name used for filtering.
+     * @param value - The filter field name. */
+    protected set_filterField(value: string) {
+        this.options.filterField = value;
+    }
+
+    /** Sets the field name used for filtering.
+     * @param value - The filter field name. */
+    set filterField(value: string) {
+        this.set_filterField(value);
+    }
+
+    protected get_filterValue(): any {
+        return this.options.filterValue;
+    }
+
+    /** Returns the current filter value.
+     * @returns The filter value. */
+    get filterValue(): any {
+        return this.get_filterValue();
+    }
+
+    /** Sets the filter value and refreshes items.
+     * @param value - The filter value to set. */
+    protected set_filterValue(value: any) {
+        if (this.options.filterValue !== value) {
+            this.options.filterValue = value;
+            this.value = null;
+            this.updateItems();
+        }
+    }
+
+    /** Sets the filter value.
+     * @param value - The filter value to set. */
+    set filterValue(value: any) {
+        this.set_filterValue(value);
+    }
+}

@@ -1,0 +1,26 @@
+﻿import { fieldsProxy, getLookup, getLookupAsync } from "@serenity-is/corelib";
+
+export interface CategoryRow {
+    CategoryID?: number;
+    CategoryName?: string;
+    Description?: string;
+    PicturePath?: string;
+}
+
+export abstract class CategoryRow {
+    static readonly idProperty = 'CategoryID';
+    static readonly nameProperty = 'CategoryName';
+    static readonly localTextPrefix = 'Northwind.Category';
+    static readonly lookupKey = 'Northwind.Category';
+
+    /** [DEPRECATED] use getLookupAsync instead */
+    static getLookup() { return getLookup<CategoryRow>('Northwind.Category') }
+    static async getLookupAsync() { return getLookupAsync<CategoryRow>('Northwind.Category') }
+
+    static readonly deletePermission = 'Northwind:General';
+    static readonly insertPermission = 'Northwind:General';
+    static readonly readPermission = 'Northwind:General';
+    static readonly updatePermission = 'Northwind:General';
+
+    static readonly Fields = fieldsProxy<CategoryRow>();
+}

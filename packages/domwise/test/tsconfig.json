@@ -1,0 +1,26 @@
+﻿{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "#src",
+    "noImplicitAny": false,
+    "declaration": false,
+    "isolatedDeclarations": false,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "outDir": "../dist",
+    "rootDir": "..",
+    "rootDirs": [
+      "./src",
+      "./test"
+    ],
+    "exactOptionalPropertyTypes": false,
+    "strict": false,
+    "types": [
+      "vitest/globals"
+    ]
+  },
+  "include": [
+    "."
+  ]
+}

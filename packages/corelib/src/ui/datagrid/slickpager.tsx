@@ -1,0 +1,164 @@
+import { Fluent, nsSerenity, PagerTexts } from "../../base";
+import { PagerOptions } from "../../slick";
+import { Widget, WidgetProps } from "../widgets/widget";
+
+/**
+ * Pager widget for SlickGrid / SleekGrid views that provides page navigation,
+ * page size selection, and status information.
+ * @typeParam P - Options type for the widget.
+ */
+export class SlickPager<P extends PagerOptions = PagerOptions> extends Widget<P> {
+    static override[Symbol.typeInfo] = this.registerClass(nsSerenity);
+
+    declare private currentPage: HTMLInputElement;
+    declare private totalPages: HTMLSpanElement;
+    declare private pageSize: HTMLSelectElement;
+    declare private stat: HTMLSpanElement;
+
+    /**
+     * Creates a pager for the view specified in the options.
+     * @param props - Widget props including the view to page.
+     */
+    constructor(props: WidgetProps<P>) {
+        super(props);
+
+        const opt = this.options;
+        opt.showRowsPerPage ??= true;
+        opt.rowsPerPageOptions ??= [20, 100, 500, 2000];
+        const v = opt.view; if (!v) throw new Error("SlickPager requires view option to be set!");
+
+        const p = "slick-pg-";
+        const Group = ({ id, children }: { id: string, children: any }) => <div class={`${p}grp ${p}grp-${id}`}>{children}</div> as HTMLDivElement;
+        const Button = ({ id, onClick }: { id: string, onClick?: (e: MouseEvent) => void }) => <div class={`${p}${id} ${p}btn`} onClick={onClick}><span class={`${p}btn-span`}></span></div> as HTMLDivElement;
+        const NavButton = ({ id }: { id: string }) => { const b = Button({ id }); Fluent.on(b, "click", () => this._changePage(id)); return b; }
+
+        this.element.addClass("s-SlickPager slick-pg").append(
+            <div class={p + "in"}>
+                {opt.showRowsPerPage && <Group id="size">
+                    {this.pageSize = <select class={`${p}size`} name="rp" onChange={() => {
+                        if (opt.onRowsPerPageChange)
+                            opt.onRowsPerPageChange(+this.pageSize.value);
+                        else {
+                            v["newp"] = 1;
+                            v.setPagingOptions({
+                                page: 1,
+                                rowsPerPage: +this.pageSize.value
+                            });
+                        }
+                    }}>
+                        {opt.rowsPerPageOptions.map(rowsPerPage => <option value={rowsPerPage} selected={v.rowsPerPage == rowsPerPage}>{rowsPerPage}</option>)}
+                    </select> as HTMLSelectElement}
+                </Group>}
+                <Group id="firstprev">
+                    <NavButton id="first" />
+                    <NavButton id="prev" />
+                </Group>
+                <Group id="control">
+                    <span class={`${p}control`}>
+                        <span class={`${p}pagetext`}>{PagerTexts.Page}</span>
+                        {this.currentPage = <input class={`${p}current mx-1`} type="text" size={4} value="1" onKeyDown={e => { if (e.key === "Enter") this._changePage("input"); }} /> as HTMLInputElement}
+                        <span class={`${p}pagesep px-1`}>/</span>
+                        {this.totalPages = <span class={`${p}total`}>1</span> as HTMLSpanElement}
+                    </span>
+                </Group>
+                <Group id="nextlast">
+                    <NavButton id="next" />
+                    <NavButton id="last" />
+                </Group>
+                <Group id="reload">
+                    <Button id="reload" onClick={() => v.populate()} />
+                </Group>
+                <Group id="stat">
+                    {this.stat = <span class={`${p}stat`} /> as HTMLSpanElement}
+                </Group>
+            </div>);
+
+        v.onPagingInfoChanged.subscribe(() => this._updatePager());
+    }
+
+    /**
+     * Changes the current page based on the requested navigation action.
+     * @param ctype - Navigation action: "first", "prev", "next", "last", or "input".
+     * @returns True if the page change was handled, false otherwise.
+     */
+    _changePage(ctype: string) { //change page
+
+        const view = this.options.view;
+
+        if (!view || view.loading)
+            return true;
+
+        const info = view.getPagingInfo();
+        const pages = (!info.rowsPerPage || !info.totalCount) ? 1 : Math.ceil(info.totalCount / info.rowsPerPage);
+
+        let newp: number;
+
+        switch (ctype) {
+            case 'first': newp = 1; break;
+            case 'prev': if (info.page > 1) newp = parseInt(info.page as any) - 1; break;
+            case 'next': if (info.page < pages) newp = parseInt(info.page as any) + 1; break;
+            case 'last': newp = pages; break;
+            case 'input':
+                let nv = parseInt(this.currentPage.value);
+                if (isNaN(nv))
+                    nv = 1;
+                else if (nv < 1)
+                    nv = 1;
+                else if (nv > pages)
+                    nv = pages;
+
+                this.currentPage.value = "" + nv;
+
+                newp = nv;
+                break;
+        }
+
+        if (newp == null || newp == info.page)
+            return false;
+
+        if (this.options.onChangePage)
+            this.options.onChangePage(newp);
+        else {
+            view.setPagingOptions({ page: newp });
+        }
+    }
+
+    /**
+     * Refreshes the pager UI from the current view paging info.
+     */
+    _updatePager() {
+
+        const view = this.options.view;
+        const info = view.getPagingInfo();
+        const pages = (!info.rowsPerPage || !info.totalCount) ? 1 : Math.ceil(info.totalCount / info.rowsPerPage);
+
+        this.currentPage.value = info.page?.toString();
+        this.totalPages.textContent = "" + pages;
+
+        const r1 = (info.page - 1) * info.rowsPerPage + 1;
+        let r2 = r1 + info.rowsPerPage - 1;
+
+        if (info.totalCount < r2)
+            r2 = info.totalCount;
+
+        let stat: string;
+
+        if (info.loading) {
+            stat = PagerTexts.LoadingStatus;
+        }
+        else if (info.error) {
+            stat = info.error;
+        }
+        else if (info.totalCount > 0) {
+            stat = PagerTexts.PageStatus;
+            stat = stat.replace(/{from}/, r1 as any);
+            stat = stat.replace(/{to}/, r2 as any);
+            stat = stat.replace(/{total}/, info.totalCount as any);
+        }
+        else
+            stat = PagerTexts.NoRowStatus;
+
+        this.stat.textContent = stat;
+        this.pageSize && (this.pageSize.value = (info.rowsPerPage || 0).toString());
+    }
+}

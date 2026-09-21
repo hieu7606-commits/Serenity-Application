@@ -1,0 +1,198 @@
+﻿import { Fluent, SNoInfer, getInstanceType, getTypeFullName, getjQuery, isArrayLike, isAssignableFrom, notifyError } from "../../base";
+
+const elementMap: WeakMap<Element, { [key: string]: { domNode: HTMLElement } }> = new WeakMap();
+
+/**
+ * Returns the widget name for a type, derived from its full type name with
+ * dots replaced by underscores.
+ * @param type - The widget type.
+ * @returns The widget name.
+ */
+export function getWidgetName(type: Function): string {
+    return getTypeFullName(type)?.replace(/\./g, '_');
+}
+
+/**
+ * Associates a widget with its DOM node so it can later be retrieved via
+ * {@link tryGetWidget} or {@link getWidgetFrom}.
+ * @param widget - The widget to associate.
+ */
+export function associateWidget(widget: { domNode: HTMLElement }) {
+    if (!widget || !widget.domNode)
+        return;
+    const type = getInstanceType(widget);
+    const name = getWidgetName(type);
+    const widgets = elementMap.get(widget.domNode);
+    if (widgets) {
+        if (widgets[name])
+            throw new Error(`The element already has widget '${name}'!`);
+
+        widgets[name] = widget;
+    }
+    else {
+        elementMap.set(widget.domNode, {
+            [name]: widget
+        });
+    }
+}
+
+/**
+ * Removes the association between a widget and its DOM node.
+ * @param widget - The widget to deassociate.
+ */
+export function deassociateWidget(widget: { domNode: HTMLElement }) {
+    if (!widget || !widget.domNode)
+        return;
+    const type = getInstanceType(widget);
+    const name = getWidgetName(type);
+    const widgets = elementMap.get(widget.domNode);
+    if (widgets) {
+        delete widgets[name];
+        if (!Object.keys(widgets).length)
+            elementMap.delete(widget.domNode);
+    }
+}
+
+/**
+ * Tries to find a widget associated with an element, optionally filtering by
+ * type.
+ * @param element - The element (or selector/array-like) to search.
+ * @param type - Optional widget type to filter by; when omitted, the first
+ *   associated widget is returned.
+ * @returns The matching widget, or null if none is found.
+ */
+export function tryGetWidget<TWidget>(element: Element | ArrayLike<HTMLElement> | string, type?: { new(...args: any[]): TWidget }): TWidget {
+
+    if (typeof element === "string") {
+        element = document.querySelector(element);
+    }
+    else if (isArrayLike(element))
+        element = element[0];
+
+    if (!element)
+        return null;
+
+    const widgets = elementMap.get(element);
+    if (!widgets)
+        return null;
+
+    const keys = Object.keys(widgets);
+    if (!keys.length)
+        return null;
+
+    if (!type)
+        return (widgets[keys[0]] ?? null) as TWidget;
+
+    const name = getWidgetName(type);
+    let widget = widgets[name];
+    if (widget)
+        return widgets[name] as TWidget;
+
+    for (const key of Object.keys(widgets)) {
+        widget = widgets[key];
+        if (widget && isAssignableFrom(type, getInstanceType(widget)))
+            return widget as TWidget;
+    }
+
+    return null;
+}
+
+/**
+ * Finds a widget associated with an element, throwing an error if none is
+ * found.
+ * @param element - The element (or selector/array-like) to search.
+ * @param type - Optional widget type to filter by.
+ * @param context - Optional DOM node used to resolve a selector.
+ * @returns The matching widget.
+ */
+export function getWidgetFrom<TWidget>(element: ArrayLike<HTMLElement> | Element | string, type?: { new(...args: any[]): TWidget }, context?: HTMLElement): TWidget {
+    let selector: string;
+    if (typeof element === "string") {
+        selector = element;
+        element = (context ?? document).querySelector(selector);
+    }
+
+    if (!element)
+        throw new Error(`Searching for widget of type '${getTypeFullName(type) ?? "Widget"}' on a non-existent element! (${selector ?? 'unknown'})`);
+
+    const widget = tryGetWidget(element, type);
+    if (!widget) {
+        const message = `Element (${selector ?? 'unknown'}) has no widget of type '${getTypeFullName(type) ?? "Widget"}'! If you have recently changed ` +
+            "editor type of a property in a form class, or changed data type in row (which also changes " +
+            "editor type) your script side Form definition might be out of date. Make sure your project " +
+            "builds successfully and transformations are executed.";
+        notifyError(message, '', null);
+        throw new Error(message);
+    }
+
+    return widget as TWidget;
+}
+
+Fluent.prototype.getWidget = function <TWidget>(this: Fluent, type?: { new(...args: any[]): TWidget }): TWidget {
+    return getWidgetFrom(this, type);
+}
+
+Fluent.prototype.tryGetWidget = function <TWidget>(this: Fluent, type?: { new(...args: any[]): TWidget }): TWidget {
+    return tryGetWidget(this, type);
+}
+
+/**
+ * A helper object that resolves prefix-relative ids, with special handling for
+ * the `Form`, `Tabs`, `Toolbar` and `PropertyGrid` keys.
+ */
+export type IdPrefixType = { [key: string]: string, Form: string, Tabs: string, Toolbar: string, PropertyGrid: string };
+
+/**
+ * Creates an id prefix helper for resolving child element ids.
+ * @param prefix - The id prefix to use.
+ * @returns An {@link IdPrefixType} proxy.
+ */
+export function useIdPrefix(prefix: string): IdPrefixType {
+    return new Proxy({ _: prefix ?? '' }, idPrefixHandler);
+}
+
+const idPrefixHandler = {
+    get(target: any, p: string | symbol) {
+        if (typeof p === 'symbol')
+            return undefined;
+
+        if (p.startsWith('#'))
+            return '#' + target._ + p.substring(1);
+
+        return target._ + p;
+    }
+};
+
+/**
+ * Props accepted by all widgets, including the target element and common
+ * element attributes.
+ * @typeParam P - The widget's specific options type.
+ */
+export type WidgetProps<P> = {
+    /** Optional id for the widget's DOM node. */
+    id?: string;
+    /** Optional CSS class(es) for the widget's DOM node. */
+    class?: string;
+    /** The element to bind the widget to, as an element, array-like, selector
+     *  or a callback that receives the created element. */
+    element?: ((el: HTMLElement) => void) | HTMLElement | ArrayLike<HTMLElement> | string;
+} & SNoInfer<P>
+
+function applyGetWidgetExtensions($: any) {
+    if (!$ || !$.fn)
+        return false;
+
+    $.fn.tryGetWidget = function tryGetWidget$<TWidget>(this: ArrayLike<HTMLElement>, type?: { new(...args: any[]): TWidget }): TWidget {
+        return tryGetWidget(this[0], type);
+    }
+
+    $.fn.getWidget = function getWidget$<TWidget>(this: ArrayLike<HTMLElement>, type?: { new(...args: any[]): TWidget }): TWidget {
+        if (!this?.length)
+            throw new Error(`Searching for widget of type '${getTypeFullName(type)}' on a non-existent element! (${(this as any)?.selector})`);
+
+        return getWidgetFrom(this[0], type);
+    };
+}
+
+!applyGetWidgetExtensions(getjQuery()) && Fluent.ready(() => applyGetWidgetExtensions(getjQuery()));
+

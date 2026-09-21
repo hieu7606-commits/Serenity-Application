@@ -1,0 +1,11 @@
+{
+  "extends": "@serenity-is/extensions/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "outDir": "./out",
+    "rootDir": "."
+  },
+  "include": [
+    "Modules"
+  ]
+}

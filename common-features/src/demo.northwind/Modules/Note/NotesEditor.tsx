@@ -1,0 +1,128 @@
+import { Authorization, EditorWidget, IGetEditValue, ISetEditValue, PropertyItem, Toolbar, confirmDialog, formatDate, formatISODateTimeUTC, sanitizeHtml } from "@serenity-is/corelib";
+import { NoteRow } from "../ServerTypes/Demo";
+import { nsDemoNorthwind } from "../ServerTypes/Namespaces";
+import { NoteDialog } from "./NoteDialog";
+import "./NotesEditor.css";
+import { bindThis } from "@serenity-is/domwise";
+
+export class NotesEditor<P = {}> extends EditorWidget<P>
+    implements IGetEditValue, ISetEditValue {
+    static override[Symbol.typeInfo] = this.registerEditor(nsDemoNorthwind, [IGetEditValue, ISetEditValue]);
+    static override createDefaultElement() { return <div /> as HTMLElement }
+
+    declare private isDirty: boolean;
+    declare private items: NoteRow[];
+    declare private noteList: HTMLUListElement;
+
+    protected override renderContents(): any {
+        const id = this.useIdPrefix();
+        return (<div>
+            <Toolbar id={id.Toolbar} buttons={[{
+                title: 'Add Note',
+                cssClass: 'add-button',
+                onClick: (e: Event) => {
+                    e.preventDefault();
+                    this.addClick();
+                }
+            }]} />
+            <ul id={id.NoteList} ref={el => this.noteList = el}></ul>
+        </div>);
+    }
+
+    protected updateContent() {
+        this.noteList.innerHTML = '';
+        const boundThis = bindThis(this);
+        this.noteList.append(<>{(this.items || []).map((item, index) => 
+            <li>
+                <div class="note-text" dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.Text ?? '') }}></div>
+                <a href="#" class="note-date" data-index={index} onClick={boundThis.editClick}>
+                    {item.InsertUserDisplayName + ' - ' + formatDate(item.InsertDate, 'g')}
+                </a>
+                <a href="#" class="note-delete" data-index={index} title="delete note" onClick={boundThis.deleteClick} />
+            </li>
+        )}</>);
+    }
+
+    protected addClick() {
+        const dlg = new NoteDialog({});
+        dlg.dialogTitle = 'Add Note';
+        dlg.okClick = () => {
+            const text = dlg.text?.trim();
+            if (!text)
+                return;
+
+            this.items = this.items || [];
+            this.items.splice(0, 0, {
+                Text: text,
+                InsertUserDisplayName: Authorization.userDefinition.DisplayName,
+                InsertDate: formatISODateTimeUTC(new Date())
+            });
+
+            this.updateContent();
+            dlg.dialogClose("ok");
+            this.set_isDirty(true);
+            this.onChange && this.onChange();
+        };
+        dlg.dialogOpen();
+    }
+
+    protected editClick(e) {
+        e.preventDefault();
+        const index = e.target.dataset.index;
+        const old = this.items[index];
+        const dlg = new NoteDialog({});
+        dlg.dialogTitle = 'Edit Note';
+        dlg.text = old.Text;
+        dlg.okClick = () => {
+            const text = dlg.text?.trim();;
+            if (!text)
+                return;
+
+            this.items[index].Text = text;
+            this.updateContent();
+            dlg.dialogClose("ok");
+            this.set_isDirty(true);
+            this.onChange && this.onChange();
+        };
+        dlg.dialogOpen();
+    }
+
+    public deleteClick(e) {
+        e.preventDefault();
+        const index = e.target.dataset.index;
+        confirmDialog('Delete this note?', () => {
+            this.items.splice(index, 1);
+            this.updateContent();
+            this.set_isDirty(true);
+            this.onChange && this.onChange();
+        });
+    }
+
+    public get value() {
+        return this.items;
+    }
+
+    public set value(value: NoteRow[]) {
+        this.items = value || [];
+        this.set_isDirty(false);
+        this.updateContent();
+    }
+
+    public getEditValue(prop: PropertyItem, target) {
+        target[prop.name] = this.value;
+    }
+
+    public setEditValue(source, prop: PropertyItem) {
+        this.value = source[prop.name] || [];
+    }
+
+    public get_isDirty(): boolean {
+        return this.isDirty;
+    }
+
+    public set_isDirty(value): void {
+        this.isDirty = value;
+    }
+
+    declare public onChange: () => void;
+}

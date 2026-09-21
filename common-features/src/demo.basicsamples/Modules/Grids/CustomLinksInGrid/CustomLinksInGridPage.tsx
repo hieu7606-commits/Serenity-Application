@@ -1,0 +1,122 @@
+import { Fluent, LookupEditor, confirmDialog, formatDate, gridPageInit, notifyInfo, notifySuccess, stringFormat, toId } from "@serenity-is/corelib";
+import { CountryWithFlagFormatter, CustomerDialog, OrderColumns, OrderDialog, OrderGrid, OrderRow } from "@serenity-is/demo.northwind";
+import { Column } from "@serenity-is/sleekgrid";
+import { nsDemoBasicSamples } from "../../ServerTypes/Namespaces";
+
+export default () => gridPageInit(CustomLinksInGrid);
+
+export class CustomLinksInGrid extends OrderGrid {
+    static override[Symbol.typeInfo] = this.registerClass(nsDemoBasicSamples);
+
+    /**
+     * We override createColumns() to change format functions for some columns.
+     * You could also write them as formatter classes, and use them at server side
+     */
+    protected override createColumns(): Column[] {
+        const columns = new OrderColumns(super.createColumns());
+
+        columns.CustomerCompanyName && (columns.CustomerCompanyName.format =
+            ctx => <a href="#" class="customer-link">{ctx.value}</a>);
+
+        columns.OrderDate && (columns.OrderDate.format =
+            ctx => <a href="#" class="date-link">{formatDate(ctx.value)}</a>);
+
+        columns.EmployeeFullName && (columns.EmployeeFullName.format =
+            ctx => <a href="#" class="employee-link">{ctx.value}</a>);
+
+        columns.ShipCountry && (columns.ShipCountry.format =
+            ctx => <a href="#" class="ship-country-link">{new CountryWithFlagFormatter().format(ctx)}</a>);
+
+        return columns.valueOf();
+    }
+
+    protected override onClick(e: Event, row: number, cell: number): void {
+
+        // let base grid handle clicks for its edit links
+        super.onClick(e, row, cell);
+
+        // if base grid already handled, we shouldn"t handle it again
+        if (Fluent.isDefaultPrevented(e)) {
+            return;
+        }
+
+        // get reference to current item
+        const item = this.itemAt(row);
+
+        // get reference to clicked element
+        const target = e.target as HTMLElement;
+
+        if (target.classList.contains("customer-link")) {
+            e.preventDefault();
+            const message = <>
+                <p>You have clicked an order from customer: {item.CustomerCompanyName}.</p> +
+                <p>If you click Yes, i'll open Customer dialog.</p>
+                <p>If you click No, i'll open Order dialog.</p>
+            </>
+            confirmDialog(message, async () => new CustomerDialog({}).loadByIdAndOpenDialog(item.CustomerID), {
+                onNo: () => {
+                    new OrderDialog().loadByIdAndOpenDialog(item.OrderID);
+                }
+            });
+        }
+        else if (target.classList.contains("date-link")) {
+            e.preventDefault();
+
+            const ordersInSameDate = this.view.getItems().filter(x => x.OrderDate == item.OrderDate).length;
+
+            notifyInfo("You clicked an order from date " +
+                formatDate(item.OrderDate) + ". There are " +
+                ordersInSameDate + " orders from the same date that is loaded in grid at the moment");
+        }
+        else if (target.classList.contains("employee-link")) {
+            e.preventDefault();
+
+            notifySuccess("You clicked an employee name, " +
+                "so i've opened a new Order Dialog from same customer " +
+                "with that employee prepopulated!");
+
+            new OrderDialog().loadEntityAndOpenDialog({
+                CustomerID: item.CustomerID,
+                EmployeeID: item.EmployeeID
+            });
+        }
+        else if (target.closest(".ship-country-link")) {
+            e.preventDefault();
+
+            notifySuccess("Let's filter the grid to orders from " + item.ShipCountry);
+            const countryFilter = this.findQuickFilter(LookupEditor,
+                OrderRow.Fields.ShipCountry);
+            countryFilter.value = item.ShipCountry;
+            this.refresh();
+        }
+    }
+
+    /**
+     * This method is called for columns with [EditLink] attribute,
+     * but only for edit links of this grid's own item type.
+     * It is also called by Add Product button with a NULL entityOrId
+     * parameter so we should check that entityOrId is a string
+     * to be sure it is originating from a link.
+     *
+     * As we changed format for other columns, this will only be called
+     * for links in remaining OrderID column
+     */
+    protected override editItem(entityOrId) {
+        // check that this is an edit link click, not add button, ID is always a string
+        if (typeof entityOrId == "string") {
+            // convert ID to an integer, and find order with that ID
+            const item = this.view.getItemById(toId(entityOrId));
+            // date is a ISO string, so need to parse it first
+            const date = formatDate(item.OrderDate);
+
+            // ask for confirmation
+            confirmDialog(stringFormat("You clicked edit link for order with ID: {0} and Date: {1}. Should i open that order?",
+                item.OrderID, date), () => {
+                    new OrderDialog().loadByIdAndOpenDialog(item.OrderID);
+                });
+        }
+        else {
+            super.editItem(entityOrId);
+        }
+    }
+}

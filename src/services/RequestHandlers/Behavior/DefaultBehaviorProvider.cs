@@ -1,0 +1,87 @@
+using System.Collections;
+
+namespace Serenity.Services;
+
+/// <summary>
+/// Default implementation for <see cref="IBehaviorProvider"/>.
+/// </summary>
+/// <remarks>
+/// Initializes a new instance of the class.
+/// </remarks>
+/// <param name="implicitBehaviors">Registry for implicit behaviors.</param>
+/// <param name="behaviorFactory">Behavior factory</param>
+/// <exception cref="ArgumentNullException"><paramref name="implicitBehaviors"/> or <paramref name="behaviorFactory"/> is <c>null</c>.</exception>
+public class DefaultBehaviorProvider(IImplicitBehaviorRegistry implicitBehaviors,
+    IBehaviorFactory behaviorFactory) : IBehaviorProvider
+{
+    private readonly IImplicitBehaviorRegistry implicitBehaviors = implicitBehaviors ??
+            throw new ArgumentNullException(nameof(implicitBehaviors));
+    private readonly IBehaviorFactory behaviorFactory = behaviorFactory ??
+            throw new ArgumentNullException(nameof(behaviorFactory));
+
+    /// <inheritdoc/>
+    public IEnumerable Resolve(Type handlerType, Type rowType, Type behaviorType)
+    {
+        var list = new List<object>();
+
+        var row = (IRow)Activator.CreateInstance(rowType)!;
+
+        foreach (var type in implicitBehaviors.GetTypes())
+        {
+            if (!behaviorType.IsAssignableFrom(type))
+                continue;
+
+            var behavior = behaviorFactory.CreateInstance(type);
+            if (behavior == null)
+                continue;
+
+            IImplicitBehavior? implicitBehavior = behavior as IImplicitBehavior;
+            if (implicitBehavior is null)
+                continue;
+
+            IFieldBehavior? fieldBehavior = behavior as IFieldBehavior;
+            if (fieldBehavior is null)
+            {
+                if (implicitBehavior.ActivateFor(row))
+                    list.Add(behavior);
+
+                continue;
+            }
+
+            foreach (var field in row.GetFields())
+            {
+                fieldBehavior!.Target = field;
+                if (implicitBehavior!.ActivateFor(row))
+                {
+                    list.Add(behavior);
+
+                    behavior = behaviorFactory.CreateInstance(type);
+                    implicitBehavior = behavior as IImplicitBehavior;
+                    fieldBehavior = behavior as IFieldBehavior;
+                }
+            }
+        }
+
+        foreach (var attr in row.GetType().GetCustomAttributes<AddBehaviorAttribute>())
+        {
+            if (behaviorType.IsAssignableFrom(attr.Value))
+                list.Add(behaviorFactory.CreateInstance(attr.Value));
+        }
+
+        foreach (var field in row.GetFields())
+        {
+            foreach (var attr in field.CustomAttributes.OfType<AddBehaviorAttribute>())
+            {
+                if (behaviorType.IsAssignableFrom(attr.Value) &&
+                    typeof(IFieldBehavior).IsAssignableFrom(attr.Value))
+                {
+                    var fieldBehavior = (IFieldBehavior)behaviorFactory.CreateInstance(attr.Value);
+                    fieldBehavior.Target = field;
+                    list.Add(fieldBehavior);
+                }
+            }
+        }
+
+        return list;
+    }
+}

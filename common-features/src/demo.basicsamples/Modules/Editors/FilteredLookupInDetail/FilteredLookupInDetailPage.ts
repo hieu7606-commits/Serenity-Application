@@ -1,0 +1,99 @@
+import { EntityDialog, Widget, WidgetProps, gridPageInit, toId } from "@serenity-is/corelib";
+import { OrderDetailDialog, OrderDetailForm, OrderDetailsEditor, OrderGrid, OrderRow, OrderService, ProductRow } from "@serenity-is/demo.northwind";
+import { FilteredLookupInDetailForm } from "../../ServerTypes/Demo";
+import { nsDemoBasicSamples } from "../../ServerTypes/Namespaces";
+import "./FilteredLookupInDetailPage.css";
+
+export default () => gridPageInit(FilteredLookupInDetailGrid);
+
+/**
+ * Subclass of OrderGrid to override dialog type to FilteredLookupInDetailDialog
+ */
+export class FilteredLookupInDetailGrid extends OrderGrid {
+    static override[Symbol.typeInfo] = this.registerClass(nsDemoBasicSamples);
+
+    protected override getDialogType() { return FilteredLookupInDetailDialog; }
+}
+
+/**
+ * Our subclass of order detail dialog with a CategoryID property
+ * that will be used to set CascadeValue of product editor
+ */
+export class FilteredLookupOrderDetailDialog extends OrderDetailDialog {
+    static override[Symbol.typeInfo] = this.registerClass(nsDemoBasicSamples);
+
+    constructor(props: any) {
+        super(props);
+
+        this.form = new OrderDetailForm(this);
+
+        // we can set cascade field in constructor
+        // we could also use FilterField but in this case, when CategoryID is null
+        // lookup editor would show all products in any category
+        this.form.ProductID.cascadeField = ProductRow.Fields.CategoryID;
+
+        // but CategoryID value is not yet available here as detail editor will set it 
+        // after calling constructor (creating a detail dialog) so we'll use BeforeLoadEntity
+    }
+
+    /**
+     * This method is called just before an entity is loaded to dialog
+     * This is also called for new record mode with an empty entity
+     */
+    protected override beforeLoadEntity(entity) {
+        super.beforeLoadEntity(entity);
+
+        // setting cascade value here
+        // make sure you have [LookupInclude] on CategoryID property of ProductRow
+        // otherwise this field won't be available in lookup script (will always be null),
+        // so can't be filtered and you'll end up with an empty product list.
+        this.form.ProductID.cascadeValue = this.categoryID;
+    }
+
+    declare public categoryID: number;
+}
+
+/**
+ * Our subclass of Order Details editor with a CategoryID property
+ */
+export class FilteredLookupDetailEditor<P = {}> extends OrderDetailsEditor<P> {
+    static override[Symbol.typeInfo] = this.registerEditor(nsDemoBasicSamples);
+
+    protected override getDialogType() { return FilteredLookupOrderDetailDialog; }
+
+    declare public categoryID: number;
+
+    /**
+     * This method is called to initialize an edit dialog created by
+     * grid editor when Add button or an edit link is clicked
+     * We have an opportunity here to pass CategoryID to edit dialog
+     */
+    protected override initEntityDialog(itemType: string, dialog: Widget<any>) {
+        super.initEntityDialog(itemType, dialog);
+
+        // passing category ID from grid editor to detail dialog
+        (dialog as FilteredLookupOrderDetailDialog).categoryID = this.categoryID;
+    }
+}
+
+/**
+ * Basic order dialog with a category selection
+ */
+export class FilteredLookupInDetailDialog<P = {}> extends EntityDialog<OrderRow, P> {
+    static override[Symbol.typeInfo] = this.registerClass(nsDemoBasicSamples);
+
+    protected override getFormKey() { return FilteredLookupInDetailForm.formKey; }
+    protected override getRowDefinition() { return OrderRow; }
+    protected override getService() { return OrderService.baseUrl; }
+
+    declare private form: FilteredLookupInDetailForm;
+
+    constructor(props: WidgetProps<P>) {
+        super(props);
+
+        this.form = new FilteredLookupInDetailForm(this);
+        this.form.CategoryID.change(e => {
+            this.form.DetailList.categoryID = toId(this.form.CategoryID.value);
+        });
+    }
+}

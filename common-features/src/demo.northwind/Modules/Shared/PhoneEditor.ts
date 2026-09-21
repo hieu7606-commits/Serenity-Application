@@ -1,0 +1,143 @@
+import { StringEditor, WidgetProps } from "@serenity-is/corelib";
+import { nsDemoNorthwind } from "../ServerTypes/Namespaces";
+import { NorthwindValidationTexts } from "../ServerTypes/Texts";
+
+export interface PhoneEditorOptions {
+    multiple?: boolean;
+}
+
+export class PhoneEditor<P extends PhoneEditorOptions = PhoneEditorOptions> extends StringEditor<P> {
+    static override [Symbol.typeInfo] = this.registerEditor(nsDemoNorthwind);
+
+    constructor(props: WidgetProps<P>) {
+        super(props);
+
+        this.addValidationRule(this.uniqueName, e => {
+            const value = this.get_value()?.trim();
+            if (!value)
+                return null;
+            return PhoneEditor.validate(value, this.props?.multiple);
+        });
+
+        const input = this.domNode as HTMLInputElement;
+        input.addEventListener('change', e => {
+            this.formatValue();
+        });
+
+        input.addEventListener('blur', e => {
+            if (this.domNode.classList.contains('valid')) {
+                this.formatValue();
+            }
+        });
+    }
+
+    protected formatValue(): void {
+        (this.domNode as HTMLInputElement).value = this.getFormattedValue();
+    }
+
+    protected getFormattedValue(): string {
+        const value = (this.domNode as HTMLInputElement)?.value;
+        if (!value)
+            return null;
+        if (this.props?.multiple) {
+            return PhoneEditor.formatMulti(value, PhoneEditor.formatPhone);
+        }
+        return PhoneEditor.formatPhone(value);
+    }
+
+    override get_value() {
+        return this.getFormattedValue();
+    }
+
+    override set_value(value: string) {
+        (this.domNode as HTMLInputElement).value = value;
+    }
+
+    static validate(phone: string, isMultiple: boolean) {
+        const valid = (isMultiple ? PhoneEditor.isValidMulti(phone, PhoneEditor.isValidPhone) : PhoneEditor.isValidPhone(phone));
+        if (valid) {
+            return null;
+        }
+        return isMultiple ? NorthwindValidationTexts.NorthwindPhoneMultiple : NorthwindValidationTexts.NorthwindPhone;
+    }
+
+    static isValidPhone(phone: string) {
+        if (!phone) {
+            return false;
+        }
+        phone = (phone ?? "").replaceAll(' ', '').replaceAll('-', '');
+        if (phone.length < 10) {
+            return false;
+        }
+
+        if (phone.startsWith('0')) {
+            phone = phone.substring(1);
+        }
+
+        if (phone.startsWith('(') && phone.charAt(4) === ')') {
+            phone = phone.substring(1, 4) + phone.substring(5);
+        }
+
+        if (phone.length !== 10) {
+            return false;
+        }
+
+        if (phone.startsWith('0')) {
+            return false;
+        }
+
+        for (let i = 0; i < phone.length; i++) {
+            const c = phone.charAt(i);
+            if (c < '0' || c > '9') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    static formatPhone(phone: string) {
+        if (!PhoneEditor.isValidPhone(phone)) {
+            return phone;
+        }
+        phone = (phone ?? "").replaceAll(' ', '').replaceAll('-', '').replaceAll('(', '').replaceAll(')', '');
+        if (phone.startsWith('0')) {
+            phone = phone.substring(1);
+        }
+        phone = '(' + phone.substring(0, 3) + ') ' + phone.substring(3, 6) + '-' + phone.substring(6, 10);
+        return phone;
+    }
+
+    static formatMulti(phone: string, format: (s: string) => string) {
+        const phones = (phone ?? "").replaceAll(';', ',').split(String.fromCharCode(44));
+        let result = '';
+        for (const x of phones) {
+            const s = x?.trim();
+            if (!s)
+                continue;
+            if (result.length > 0)
+                result += ', ';
+            result += format(s);
+        }
+        return result;
+    }
+
+    static isValidMulti(phone: string, check: (s: string) => boolean) {
+        if (!phone)
+            return false;
+        const phones = (phone ?? "").replaceAll(';', ',').split(',');
+        let anyValid = false;
+        for (let $t1 = 0; $t1 < phones.length; $t1++) {
+            const x = phones[$t1];
+            const s = x?.trim();
+            if (!s)
+                continue;
+            if (!check(s))
+                return false;
+            anyValid = true;
+        }
+        if (!anyValid)
+            return false;
+        return true;
+    }
+}

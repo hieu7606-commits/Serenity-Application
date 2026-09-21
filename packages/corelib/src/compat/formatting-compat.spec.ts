@@ -1,0 +1,147 @@
+beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+});
+
+describe("parseDayHourAndMin", () => {
+    it("returns null for null, undefined and empty string", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.parseDayHourAndMin(null)).toBeNull();
+        expect(formatting.parseDayHourAndMin(undefined)).toBeNull();
+        expect(formatting.parseDayHourAndMin("")).toBeNull();
+        expect(formatting.parseDayHourAndMin("   ")).toBeNull();
+    });
+
+    it("returns number of minutes for day.hour:min", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.parseDayHourAndMin("5.10:25")).toBe(5 * 24 * 60 + 10 * 60 + 25);
+        expect(formatting.parseDayHourAndMin("5.10:00")).toBe(5 * 24 * 60 + 10 * 60);
+    });
+
+    it("returns number of minutes for day with zero hour/min part", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.parseDayHourAndMin("1.00:00")).toBe(24 * 60);
+        expect(formatting.parseDayHourAndMin("3.00:00")).toBe(3 * 24 * 60);
+    });
+
+    it("returns number of minutes for hour:min", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.parseDayHourAndMin("10:25")).toBe(10 * 60 + 25);
+        expect(formatting.parseDayHourAndMin("10:00")).toBe(10 * 60);
+        expect(formatting.parseDayHourAndMin("3:00")).toBe(3 * 60);
+    });
+
+    it("returns number of minutes for days only", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.parseDayHourAndMin("10")).toBe(10 * 24 * 60);
+    });
+
+    it("returns NaN for invalid formats", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.parseDayHourAndMin("10:61")).toBeNaN();
+        expect(formatting.parseDayHourAndMin("25:00")).toBeNaN();
+        expect(formatting.parseDayHourAndMin("1.10:61")).toBeNaN();
+        expect(formatting.parseDayHourAndMin("5.25:00")).toBeNaN();
+        expect(formatting.parseDayHourAndMin("5.25:00:3532")).toBeNaN();
+        expect(formatting.parseDayHourAndMin("5.25:00.3532")).toBeNaN();
+        expect(formatting.parseDayHourAndMin("5.325:1")).toBeNaN();
+    });
+});
+
+describe("parseHourAndMin", () => {
+    it("returns null for null, undefined and empty string", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.parseHourAndMin(null)).toBeNull();
+        expect(formatting.parseHourAndMin(undefined)).toBeNull();
+        expect(formatting.parseHourAndMin("")).toBeNull();
+        expect(formatting.parseHourAndMin("   ")).toBeNull();
+    });
+
+    it("returns number of minutes for hour:min", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.parseHourAndMin("10:25")).toBe(10 * 60 + 25);
+        expect(formatting.parseHourAndMin("10:00")).toBe(10 * 60);
+        expect(formatting.parseHourAndMin("3:00")).toBe(3 * 60);
+    });
+
+    it("returns NaN for invalid formats", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.parseHourAndMin("10:61")).toBeNaN();
+        expect(formatting.parseHourAndMin("25:00")).toBeNaN();
+        expect(formatting.parseHourAndMin("1.10:61")).toBeNaN();
+        expect(formatting.parseHourAndMin("5.25:00")).toBeNaN();
+        expect(formatting.parseHourAndMin("5.25:00:3532")).toBeNaN();
+        expect(formatting.parseHourAndMin("5.25:00.3532")).toBeNaN();
+        expect(formatting.parseHourAndMin("5.325:1")).toBeNaN();
+    });
+});
+
+describe("formatDayHourAndMin", () => {
+    it("returns empty string for null and undefined", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.formatDayHourAndMin(null)).toBe("");
+        expect(formatting.formatDayHourAndMin(undefined)).toBe("");
+    });
+
+    it("returns day part if total is more than one day", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.formatDayHourAndMin(5 * 24 * 60 + 10 * 60 + 25)).toBe("5.10:25");
+        expect(formatting.formatDayHourAndMin(5 * 24 * 60 + 10 * 60)).toBe("5.10:00");
+    });
+
+    it("returns no day part if total is less than one day", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.formatDayHourAndMin(10 * 60 + 25)).toBe("10:25");
+        expect(formatting.formatDayHourAndMin(10 * 60)).toBe("10:00");
+        expect(formatting.formatDayHourAndMin(3 * 60)).toBe("03:00");
+    });
+
+    it("returns day only if without hour/min", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.formatDayHourAndMin(10 * 24 * 60)).toBe("10");
+    });
+
+    it("returns '0' for 0", async function () {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.formatDayHourAndMin(0)).toBe("0");
+    });
+});
+
+describe("turkishLocaleToUpper", () => {
+    it("ignores returns empty values as is", async () => {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.turkishLocaleToUpper("")).toBe("");
+        expect(formatting.turkishLocaleToUpper(null)).toBe(null);
+        expect(formatting.turkishLocaleToUpper(undefined)).toBe(undefined);
+    });
+
+    it("converts i to İ and ı to I", async () => {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.turkishLocaleToUpper("xıIiİıİia")).toBe("XIIİİIİİA");
+    });
+});
+
+describe("turkishLocaleToLower", () => {
+    it("ignores empty values as is", async () => {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.turkishLocaleToLower("")).toBe("");
+        expect(formatting.turkishLocaleToLower(null)).toBe(null);
+        expect(formatting.turkishLocaleToLower(undefined)).toBe(undefined);
+    });
+
+    it("converts I to dotless i and İ to dotted i", async () => {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect(formatting.turkishLocaleToLower("ISIL")).toBe("ısıl");
+        expect(formatting.turkishLocaleToLower("xıIiİıİia")).toBe("xııiiıiia");
+        expect(formatting.turkishLocaleToLower("İSTANBUL")).toBe("istanbul");
+    });
+});
+
+describe("turkishLocaleCompare", () => {
+    it("is same with Culture.stringCompare", async () => {
+        const formatting = (await import("./formatting-compat")) as any;
+        expect((formatting as any).turkishLocaleCompare).toBe((await import("../base")).Culture.stringCompare);
+    });
+});
+
+export { };

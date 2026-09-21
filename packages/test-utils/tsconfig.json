@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "ES2015",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": [
+      "ES2022",
+      "dom"
+    ],
+    "outDir": "./out",
+    "rootDir": ".",
+    "strict": false
+  },
+  "include": [
+    "."
+  ]
+}

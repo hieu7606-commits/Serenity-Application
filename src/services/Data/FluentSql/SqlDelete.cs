@@ -1,0 +1,99 @@
+namespace Serenity.Data;
+
+/// <summary>
+///   Class to generate queries of form <c>DELETE FROM tablename WHERE [conditions]</c>.</summary>
+/// <remarks>
+///   Creates a new SqlDelete query.</remarks>
+/// <param name="tableName">
+///   Table to delete records from (required).</param>
+public sealed class SqlDelete(string tableName) : QueryWithParams, IFilterableQuery
+{
+    private readonly string _tableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
+    private readonly StringBuilder _where = new();
+
+    /// <summary>
+    ///   Adds a new condition to the WHERE part of the query with an "AND" between.</summary>
+    /// <param name="condition">
+    ///   Condition.</param>
+    /// <returns>
+    ///   SqlDelete object itself.</returns>
+    /// <exception cref="ArgumentNullException">condition is null or empty.</exception>
+    public SqlDelete Where(string condition)
+    {
+        if (condition == null || condition.Length == 0)
+            throw new ArgumentNullException(nameof(condition));
+
+        condition = SqlUpdate.RemoveT0Reference(condition);
+
+        if (_where.Length > 0)
+            _where.Append(SqlKeywords.And);
+
+        _where.Append(condition);
+
+        return this;
+    }
+
+    /// <summary>
+    ///   Adds a new condition to the WHERE part of the query with an "AND" between.</summary>
+    /// <param name="condition">
+    ///   Condition.</param>
+    /// <returns>
+    ///   SqlDelete object itself.</returns>
+    void IFilterableQuery.Where(string condition)
+    {
+        Where(condition);
+    }
+
+    /// <summary>
+    ///   Adds new conditions to the WHERE part of the query with an "AND" between.</summary>
+    /// <param name="conditions">
+    ///   Conditions.</param>
+    /// <returns>
+    ///   SqlDelete object itself.</returns>
+    /// <exception cref="ArgumentNullException">conditions is null or empty.</exception>
+    public SqlDelete Where(params string[] conditions)
+    {
+        if (conditions == null || conditions.Length == 0)
+            throw new ArgumentNullException(nameof(conditions));
+
+        foreach (var condition in conditions)
+            Where(condition);
+
+        return this;
+    }
+
+    /// <summary>
+    ///   Gets string representation of the query.</summary>
+    /// <returns>
+    ///   String representation of the query.</returns>
+    public override string ToString()
+    {
+        return Format(_tableName, _where.ToString(), dialect);
+    }
+
+    /// <summary>
+    ///   Formats a DELETE query.</summary>
+    /// <param name="tableName">
+    ///   Table name.</param>
+    /// <param name="where">
+    ///   Where part of the query.</param>
+    /// <param name="dialect">Target dialect</param>
+    /// <returns>
+    ///   Formatted query.</returns>
+    /// <exception cref="ArgumentNullException">tableName is null or empty.</exception>
+    public static string Format(string tableName, string where, ISqlDialect? dialect = null)
+    {
+        if (tableName == null || tableName.Length == 0)
+            throw new ArgumentNullException(tableName);
+
+        StringBuilder sb = new("DELETE FROM ", 24 + where.Length);
+        sb.Append(SqlSyntax.AutoBracketValid(tableName, dialect));
+
+        if (!string.IsNullOrEmpty(where))
+        {
+            sb.Append(" WHERE ");
+            sb.Append(where);
+        }
+        return sb.ToString();
+    }
+}

@@ -1,0 +1,273 @@
+@import "./slick.base.css";
+
+/*
+IMPORTANT:
+In order to preserve the uniform grid appearance, all cell styles need to have padding, margin and border sizes.
+No built-in (selected, editable, highlight, flashing, invalid, loading, :focus) or user-specified CSS
+classes should alter those!
+*/
+
+:root {
+  --sg-editable-bg: #ffffff;
+  --sg-header-bg: #f7f7f5;
+  --sg-header-border: #d6d7d6;
+  --sg-cell-border: #d6d7d6;
+  --sg-padding-v: 4px;
+  --sg-padding-h: 6px;
+  --sg-row-bg: #ffffff;
+  --sg-row-odd-bg: #f9f9f9;
+}
+
+.slick-container {
+  border: 1px solid #e7e7e7;
+}
+
+.slick-header {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+}
+
+.slick-header-columns,
+.slick-headerrow-columns,
+.slick-footerrow-columns {
+  background-color: var(--sg-header-bg);
+}
+
+.slick-header-columns {
+  border-bottom: 1px solid var(--sg-header-border);
+}
+
+.slick-group-header,
+.slick-headerrow-column,
+.slick-header-column,
+.slick-footerrow-column {
+  background-color: var(--sg-header-bg);
+}
+
+.slick-cell.active {
+  background-color: rgba(0, 98, 255, 0.05);
+}
+
+.slick-group-header,
+.slick-header-column,
+.slick-headerrow-column,
+.slick-footerrow-column {
+  border-right: 1px solid var(--sg-header-border);
+}
+
+.slick-sort-indicator {
+  margin-left: 3px;
+}
+
+.slick-sort-indicator::before {
+  content: '';
+  display: inline-block;
+  vertical-align: -0.15em;
+  width: 1em;
+  height: 1em;
+  background: no-repeat center center url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23bbb' viewBox='0 0 32 32'%3E%3Cpath d='M 16 3.59375 L 15.28125 4.28125 L 7.28125 12.28125 L 5.59375 14 L 26.40625 14 L 24.71875 12.28125 L 16.71875 4.28125 Z M 16 6.4375 L 21.5625 12 L 10.4375 12 Z M 5.59375 18 L 7.28125 19.71875 L 15.28125 27.71875 L 16 28.40625 L 16.71875 27.71875 L 24.71875 19.71875 L 26.40625 18 Z M 10.4375 20 L 21.5625 20 L 16 25.5625 Z'/%3E%3C/svg%3E");
+}
+
+.slick-sort-indicator-asc::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23036' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 13.5a.5.5 0 0 1-1 0V4.707L1.354 5.854a.5.5 0 1 1-.708-.708l2-1.999.007-.007a.498.498 0 0 1 .7.006l2 2a.5.5 0 1 1-.707.708L3.5 4.707V13.5zm4-9.5a.5.5 0 0 1 0-1h1a.5.5 0 0 1 0 1h-1zm0 3a.5.5 0 0 1 0-1h3a.5.5 0 0 1 0 1h-3zm0 3a.5.5 0 0 1 0-1h5a.5.5 0 0 1 0 1h-5zM7 12.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 0-1h-7a.5.5 0 0 0-.5.5z'/%3E%3C/svg%3E");
+}
+
+.slick-sort-indicator-desc::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23036' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 2.5a.5.5 0 0 0-1 0v8.793l-1.146-1.147a.5.5 0 0 0-.708.708l2 1.999.007.007a.497.497 0 0 0 .7-.006l2-2a.5.5 0 0 0-.707-.708L3.5 11.293V2.5zm3.5 1a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zM7.5 6a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1h-5zm0 3a.5.5 0 0 0 0 1h3a.5.5 0 0 0 0-1h-3zm0 3a.5.5 0 0 0 0 1h1a.5.5 0 0 0 0-1h-1z'/%3E%3C/svg%3E");
+}
+
+.slick-sortable-placeholder {
+  background: silver;
+}
+
+.slick-group-header,
+.slick-headerrow-column,
+.slick-header-column,
+.slick-footerrow-column,
+.slick-cell {
+  padding: var(--sg-padding-v) var(--sg-padding-h);
+}
+
+.slick-cell,
+.slick-headerrow-column,
+.slick-footerrow-column {
+  border-right: 1px solid var(--sg-cell-border);
+  border-bottom: 1px solid var(--sg-cell-border);
+}
+
+.slick-cell.highlighted {
+  background: rgba(0, 0, 255, 0.2);
+  transition: all 0.5s;
+}
+
+.slick-cell.flashing {
+  border-right-color: 1px solid red !important;
+  border-bottom-color: 1px solid red !important;
+}
+
+.slick-cell.editable {
+  background: var(--sg-editable-bg);
+  box-shadow: -1px -1px 2px 1px rgba(0, 0, 0, 0.1);
+}
+
+.slick-cell.invalid {
+  background-color: #ff00001f;
+  box-shadow: 0 0 0px 1px rgb(255 0 0 / 50%);
+}
+
+.slick-reorder-proxy {
+  background: blue;
+}
+
+.slick-reorder-guide {
+  background: blue;
+}
+
+.slick-reorder-shadow-row {
+  box-shadow: rgb(0 0 0 / 20%) 8px 2px 8px 4px, rgb(0 0 0 / 19%) 2px 2px 0px 0px;
+}
+
+.slick-editor-text,
+.slick-editor-percentcomplete {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  margin: 0;
+  background: transparent;
+  outline: 0;
+  padding: 0;
+  font-weight: inherit;
+}
+
+.slick-checkbox,
+.slick-editor-checkbox {
+  display: inline-block;
+  width: 1.4em;
+  margin-top: 0.1em;
+  height: 1.4em;
+  border: 1px solid #ccc;
+  border-radius: 2px;
+}
+
+.slick-checkbox.checked,
+.slick-editor-checkbox:checked {
+  background-color: var(--bs-primary, '#f00');
+  border-color: var(--bs-primary, '#f00');
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e");
+  background-position: center center;
+}
+
+.slick-checkmark {
+  display: inline-block;
+  width: 1.5em;
+  height: 1.5em;
+  background: no-repeat center center url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='%23090' class='bi bi-check-lg' viewBox='0 0 16 16'%3E%3Cpath d='M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z'/%3E%3C/svg%3E");
+}
+
+.slick-editor-checkbox {
+  outline: none;
+  appearance: none;
+}
+
+.slick-percentcomplete-bar {
+  display: inline-block;
+  height: 0.7em;
+  border-radius: 0.35em;
+}
+
+.slick-editor-text.hasDatepicker {
+  width: calc(100% - 18px) !important;
+}
+
+.slick-editor-percentcomplete {
+  width: calc(100% - 19px) !important;
+}
+
+.slick-editor-percentcomplete-picker {
+  position: relative;
+  display: inline-block;
+  height: 100%;
+  overflow: visible;
+  z-index: 1000;
+}
+
+.slick-editor-percentcomplete-picker::before {
+  font-family: 'Font Awesome 5 Free', FontAwesome;
+  font-weight: 900;
+  content: '\f304';
+}
+
+button.ui-datepicker-trigger::before {
+  font-family: 'Font Awesome 5 Free', FontAwesome;
+  font-weight: 900;
+  content: '\f304';
+}
+
+.slick-editor-percentcomplete-helper {
+  border: 0 solid #ccc;
+  position: absolute;
+  top: -2px;
+  left: -9px;
+  padding-left: 9px;
+  width: 130px;
+  height: 140px;
+  display: none;
+  overflow: visible;
+}
+
+.slick-editor-percentcomplete-wrapper {
+  background: beige;
+  padding: 8px;
+  width: 100%;
+  height: 120px;
+  border: 1px solid #ccc;
+}
+
+.slick-editor-percentcomplete-slider {
+  background: white;
+  border-radius: 4px;
+  float: left;
+  border: 1px solid #d3d3d3;
+  width: 0.8em;
+  height: 100px;
+  position: relative;
+  text-align: left;
+  color: #222;
+}
+
+.slick-editor-percentcomplete-picker .ui-slider-handle {
+  border: 1px solid #d3d3d3;
+  background: #e6e6e6;
+  left: -0.3em;
+  margin-left: 0;
+  margin-bottom: -0.6em;
+  position: absolute;
+  z-index: 2;
+  width: 1.2em;
+  height: 1.2em;
+  cursor: default;
+  touch-action: none;
+  border-radius: 4px;
+}
+
+.slick-editor-percentcomplete-buttons {
+  float: right;
+  display: flex;
+  flex-direction: column;
+  align-items: top;
+  margin-top: 10px;
+}
+
+.slick-editor-percentcomplete-buttons button {
+  width: 80px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+  margin-bottom: 8px;
+}
+
+.slick-editor-percentcomplete-picker:hover .slick-editor-percentcomplete-helper {
+  display: block;
+}
+
+.slick-editor-percentcomplete-helper:hover {
+  display: block;
+}

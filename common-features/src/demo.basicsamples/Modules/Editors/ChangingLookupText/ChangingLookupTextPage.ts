@@ -1,0 +1,75 @@
+import { ComboboxEditor, Lookup, LookupEditorBase, LookupEditorOptions, WidgetProps, formatNumber, toId, tryGetWidget } from "@serenity-is/corelib";
+import { OrderDetailRow, ProductRow } from "@serenity-is/demo.northwind";
+import { GridEditorDialog } from "@serenity-is/extensions";
+import { ChangingLookupTextForm } from "../../ServerTypes/Demo";
+import { nsDemoBasicSamples } from "../../ServerTypes/Namespaces";
+
+export default function pageInit() {
+    const dlg = new ChangingLookupTextDialog({});
+    dlg.loadNewAndOpenDialog();
+    tryGetWidget(dlg.domNode.querySelector(".field.ProductID .editor"), ComboboxEditor)?.openDropdown();
+}
+
+/**
+ * Our custom product editor type
+ */
+export class ChangingLookupTextEditor extends LookupEditorBase<LookupEditorOptions, ProductRow> {
+    static override[Symbol.typeInfo] = this.registerEditor(nsDemoBasicSamples);
+
+    protected override getLookupKey() {
+        return ProductRow.lookupKey;
+    }
+
+    protected override getItemText(item: ProductRow, lookup: Lookup<ProductRow>) {
+        return super.getItemText(item, lookup) +
+            ' (' +
+            '$' + formatNumber(item.UnitPrice, '#,##0.00') +
+            ', ' + (item.UnitsInStock > 0 ? (item.UnitsInStock + ' in stock') : 'out of stock') +
+            ', ' + (item.SupplierCompanyName || 'Unknown') +
+            ')';
+    }
+}
+
+export class ChangingLookupTextDialog<P = {}> extends GridEditorDialog<OrderDetailRow, P> {
+    static override[Symbol.typeInfo] = this.registerClass(nsDemoBasicSamples);
+
+    protected override getFormKey() { return ChangingLookupTextForm.formKey; }
+    protected override getLocalTextPrefix() { return OrderDetailRow.localTextPrefix; }
+
+    declare protected form: ChangingLookupTextForm;
+
+    constructor(props: WidgetProps<P>) {
+        super(props);
+
+        this.form = new ChangingLookupTextForm(this);
+
+        this.form.ProductID.changeSelect2(async e => {
+            const productID = toId(this.form.ProductID.value);
+            if (productID != null) {
+                this.form.UnitPrice.value = (await ProductRow.getLookupAsync()).itemById[productID].UnitPrice;
+            }
+        });
+
+        this.form.Discount.addValidationRule(this.uniqueName, e => {
+            const price = this.form.UnitPrice.value;
+            const quantity = this.form.Quantity.value;
+            const discount = this.form.Discount.value;
+            if (price != null && quantity != null && discount != null &&
+                discount > 0 && discount >= price * quantity) {
+                return "Discount can't be higher than total price!";
+            }
+        });
+    }
+
+    protected override getDialogOptions() {
+        const opt = super.getDialogOptions();
+        opt.modal = false;
+        return opt;
+    }
+
+    protected override updateInterface() {
+        super.updateInterface();
+        this.toolbar.findButton('apply-changes-button').hide();
+        this.toolbar.findButton('save-and-close-button').hide();
+    }
+}

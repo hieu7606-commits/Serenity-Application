@@ -1,0 +1,445 @@
+using System.Diagnostics;
+using System.Xml.Linq;
+
+namespace Serenity.CodeGenerator;
+
+public class ProjectFileInfo(IFileSystem fileSystem, string projectFile,
+    Func<string, string?>? getPropertyArgument = null,
+    Action<string>? onError = null) : IProjectFileInfo
+{
+    private readonly IFileSystem fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+    private readonly string projectFile = projectFile ?? throw new ArgumentNullException(nameof(projectFile));
+    private string? assemblyName;
+    private string? esmAssetBasePath;
+    private Dictionary<string, string?>? globalUsings;
+    private string? nullable;
+    private ProjectMSBuildInfo? projectMSBuildInfo;
+    private string? outDir;
+    private string? rootNamespace;
+    private string? targetFramework;
+
+    public IFileSystem FileSystem => fileSystem;
+    public string ProjectFile => projectFile;
+
+    private static readonly char[] complexValueChars = [';', '$', '@'];
+
+    /// <summary>
+    /// Callback for tests to validate MSBuild execution arguments
+    /// </summary>
+    public Func<ProcessStartInfo, string>? ExecuteMSBuild { get; set; }
+
+    public string? GetAssemblyName()
+    {
+        if (assemblyName is null)
+        {
+            if (getPropertyArgument?.Invoke("AssemblyName") is string s)
+                assemblyName = s;
+            else
+            {
+                var props = GetProjectProperties();
+                if (!string.IsNullOrEmpty(props.AssemblyName))
+                    return assemblyName = props.AssemblyName;
+
+                assemblyName ??= ExtractPropertyFrom(projectFile, g =>
+                    g.Elements("AssemblyName").LastOrDefault());
+            }
+        }
+
+        return string.IsNullOrEmpty(assemblyName) ? null : assemblyName;
+    }
+
+    public string? GetEsmAssetBasePath()
+    {
+        if (esmAssetBasePath is null)
+        {
+            if (getPropertyArgument?.Invoke("ESMAssetBasePath") is string s && !string.IsNullOrEmpty(s))
+                esmAssetBasePath = s;
+            else
+            {
+                var props = GetProjectProperties();
+                if (!string.IsNullOrEmpty(props.EsmAssetBasePath))
+                    return esmAssetBasePath = props.EsmAssetBasePath;
+
+                esmAssetBasePath ??= ExtractPropertyFrom(projectFile, groups =>
+                    groups.Elements("ESMAssetBasePath").LastOrDefault());
+            }
+        }
+
+        return string.IsNullOrEmpty(esmAssetBasePath) ? null : esmAssetBasePath;
+    }
+
+    public string? GetNullable()
+    {
+        if (nullable is null)
+        {
+            if (getPropertyArgument?.Invoke("Nullable") is string s && !string.IsNullOrEmpty(s))
+                nullable = s;
+            else
+            {
+                var props = GetProjectProperties();
+                if (!string.IsNullOrEmpty(props.Nullable))
+                    return nullable = props.Nullable;
+
+                nullable ??= ExtractPropertyFrom(projectFile, groups =>
+                    groups.Elements("Nullable").LastOrDefault());
+            }
+        }
+
+        return string.IsNullOrEmpty(nullable) ? null : nullable;
+    }
+
+    public string? GetOutDir()
+    {
+        if (outDir is null)
+        {
+            if ((getPropertyArgument?.Invoke("OutDir") ??
+                 getPropertyArgument?.Invoke("OutputPath")) is string s)
+                outDir = s;
+            else
+            {
+                var props = GetProjectProperties();
+                if (!string.IsNullOrEmpty(props.OutDir))
+                    return outDir = props.OutDir;
+
+                outDir ??= ExtractPropertyFrom(projectFile, g =>
+                    g.Elements("OutDir").LastOrDefault() ??
+                    g.Elements("OutputPath").LastOrDefault());
+            }
+
+            if (!string.IsNullOrEmpty(outDir))
+                outDir = fileSystem.Combine(fileSystem.GetDirectoryName(projectFile), outDir);
+        }
+
+        return string.IsNullOrEmpty(outDir) ? null : PathHelper.ToUrl(outDir);
+    }
+
+    public string? GetRootNamespace()
+    {
+        if (rootNamespace is null)
+        {
+            if (getPropertyArgument?.Invoke("RootNamespace") is string s)
+                rootNamespace = s;
+            else
+            {
+                var props = GetProjectProperties();
+                if (!string.IsNullOrEmpty(props.RootNamespace))
+                    return rootNamespace = props.RootNamespace;
+
+                rootNamespace ??= ExtractPropertyFrom(projectFile, propertyGroups =>
+                    propertyGroups.Elements("RootNamespace").LastOrDefault());
+            }
+        }
+
+        return string.IsNullOrEmpty(rootNamespace) ? null : rootNamespace;
+    }
+
+    public string? GetTargetFramework()
+    {
+        if (targetFramework is null)
+        {
+            if (getPropertyArgument?.Invoke("TargetFramework") is string s)
+                targetFramework = s;
+            else
+            {
+                var props = GetProjectProperties();
+                if (!string.IsNullOrEmpty(props.TargetFramework))
+                    return targetFramework = props.TargetFramework;
+
+                targetFramework ??= ExtractPropertyFrom(projectFile, groups =>
+                    groups.Elements("TargetFramework").LastOrDefault() ??
+                    groups.Descendants("TargetFrameworks").LastOrDefault()) ?? "";
+            }
+        }
+
+        return string.IsNullOrEmpty(targetFramework) ? null : targetFramework;
+    }
+
+    private string? ExtractPropertyFrom(string csproj, Func<IEnumerable<XElement>, XElement?> extractor)
+    {
+        foreach (var root in EnumerateProjectAndDirectoryBuildProps(csproj))
+        {
+            var element = extractor(root.Elements("PropertyGroup"));
+
+            if (element is null)
+                continue;
+
+            if (!string.IsNullOrEmpty(element.Attribute("Condition")?.Value) ||
+                element.Value.IndexOfAny(complexValueChars) >= 0)
+                return "";
+
+            return element.Value.TrimToEmpty();
+        }
+
+        return null;
+    }
+
+    private IEnumerable<XElement> EnumerateProjectAndDirectoryBuildProps(string csproj)
+    {
+        ArgumentNullException.ThrowIfNull(fileSystem);
+
+        var xe = XElement.Parse(fileSystem.ReadAllText(csproj));
+        yield return xe;
+
+        var dir = fileSystem.GetDirectoryName(csproj);
+        while (!string.IsNullOrEmpty(dir) &&
+            fileSystem.DirectoryExists(dir))
+        {
+            dir = fileSystem.GetFullPath(dir);
+            var dirProps = fileSystem.Combine(dir, "Directory.Build.props");
+            if (fileSystem.FileExists(dirProps))
+                yield return XElement.Parse(fileSystem.ReadAllText(dirProps));
+
+            dir = fileSystem.GetDirectoryName(dir);
+        }
+    }
+
+    private class ProjectMSBuildInfo
+    {
+        public ProjectProperties? Properties { get; set; }
+        public ProjectItems? Items { get; set; }
+    }
+
+    private class ProjectItems
+    {
+        public PackageReferenceItem[]? PackageReference { get; set; }
+        public ProjectReferenceItem[]? ProjectReference { get; set; }
+        public UsingItem[]? Using { get; set; }
+    }
+
+    private class PackageReferenceItem
+    {
+        public string? Identity { get; set; }
+        public string? Version { get; set; }
+    }
+
+    private class ProjectReferenceItem
+    {
+        public string? Filename { get; set; }
+    }
+
+    private class UsingItem
+    {
+        public string? Identity { get; set; }
+        public string? Alias { get; set; }
+        public string? Static { get; set; }
+    }
+
+    public class ProjectProperties
+    {
+        public string? AssemblyName { get; set; }
+        public string? EsmAssetBasePath { get; set; }
+        public string? Nullable { get; set; }
+        public string? OutDir { get; set; }
+        public string? RootNamespace { get; set; }
+        public string? TargetFramework { get; set; }
+    }
+
+    private ProjectProperties GetProjectProperties()
+    {
+        return GetProjectMSBuildInfo().Properties ??= new();
+    }
+
+    private ProjectMSBuildInfo GetProjectMSBuildInfo()
+    {
+        if (projectMSBuildInfo != null)
+            return projectMSBuildInfo;
+
+        // can't run dotnet in tests in an abstract file system
+        // unless RunMSBuild callback is provided
+        if ((ExecuteMSBuild is null && fileSystem is not PhysicalFileSystem) ||
+            !fileSystem.FileExists(projectFile))
+            return (projectMSBuildInfo = new());
+
+        var configArg = getPropertyArgument?.Invoke("Configuration") is string configuration &&
+            !string.IsNullOrEmpty(configuration) ? $"-property:Configuration={configuration} " : "";
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"msbuild \"{projectFile}\" {configArg}" +
+                "-getItem:Using " +
+                "-getProperty:AssemblyName " +
+                "-getProperty:ESMAssetBasePath " +
+                "-getProperty:Nullable " +
+                "-getProperty:OutDir " +
+                "-getProperty:RootNamespace " +
+                "-getProperty:TargetFramework",
+            RedirectStandardOutput = true,
+            UseShellExecute = false
+        };
+
+        try
+        {
+            string? output;
+            if (ExecuteMSBuild != null)
+            {
+                output = ExecuteMSBuild(startInfo);
+            }
+            else
+            {
+                var process = new Process() { StartInfo = startInfo };
+                process.Start();
+                output = process.StandardOutput.ReadToEnd();
+                if (!process.WaitForExit(10000))
+                    output = null;
+            }
+
+            output = (output ?? "").Trim();
+
+            if (output.StartsWith('{') &&
+                output.EndsWith('}'))
+                return (projectMSBuildInfo = JSON.ParseTolerant<ProjectMSBuildInfo>(output) ?? new());
+
+            onError?.Invoke($"Unexpected output from MSBuild for project properties: {output}");
+        }
+        catch (Exception ex)
+        {
+            onError?.Invoke($"Error while executing MSBuild to get project properties: {ex.Message}");
+        }
+
+        return (projectMSBuildInfo = new());
+    }
+
+    public string[]? GetAssemblyList(string[]? configured)
+    {
+        ArgumentNullException.ThrowIfNull(onError);
+
+        string projectFile = ProjectFile;
+
+        if (configured == null || configured.Length == 0)
+        {
+            string? outputDir = GetOutDir();
+            string? assemblyName = GetAssemblyName() ??
+                FileSystem.ChangeExtension(fileSystem.GetFileName(projectFile), null);
+
+            void couldNotFindError(string expectedPath)
+            {
+                onError(string.Format(CultureInfo.CurrentCulture,
+                    "Couldn't find output file at {0}!" + Environment.NewLine +
+                    "Make sure project is built successfully before running Sergen", expectedPath));
+            }
+
+            bool testCandidate(string path, out string outputPath)
+            {
+                outputPath = path + ".dll";
+                if (fileSystem.FileExists(outputPath))
+                    return true;
+
+                if (fileSystem.FileExists(path + ".exe"))
+                {
+                    outputPath = path + ".exe";
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(outputDir) &&
+                !string.IsNullOrEmpty(assemblyName))
+            {
+                if (!testCandidate(fileSystem.Combine(outputDir, assemblyName), out string outputPath))
+                {
+                    couldNotFindError(outputPath);
+                    return null;
+                }
+
+                return [outputPath];
+            }
+
+            string? targetFramework = GetTargetFramework();
+            if (string.IsNullOrEmpty(targetFramework))
+            {
+                onError("Couldn't read TargetFramework from project file!");
+                return null;
+            }
+
+            var debugExists = testCandidate(fileSystem.Combine(fileSystem.GetDirectoryName(ProjectFile),
+                PathHelper.ToPath("bin/Debug/" + targetFramework + "/" + assemblyName)), out var debugPath);
+            var releaseExists = testCandidate(fileSystem.Combine(fileSystem.GetDirectoryName(ProjectFile),
+                PathHelper.ToPath("bin/Release/" + targetFramework + "/" + assemblyName)), out var releasePath);
+
+            if (releaseExists &&
+                (!debugExists || fileSystem.GetLastWriteTimeUtc(debugPath) < fileSystem.GetLastWriteTimeUtc(releasePath)))
+                return [releasePath];
+
+            if (debugExists)
+                return [debugPath];
+
+            couldNotFindError(debugPath);
+            return null;
+        }
+
+        if (configured == null || configured.Length == 0)
+        {
+            onError("ServerTypings has no assemblies configured in sergen.json file!");
+            return null;
+        }
+
+        var assemblyFiles = configured.ToArray();
+        for (var i = 0; i < assemblyFiles.Length; i++)
+        {
+            var assemblyFile1 = PathHelper.ToUrl(fileSystem.GetFullPath(PathHelper.ToPath(assemblyFiles[i])));
+            var binDebugIdx = assemblyFile1.IndexOf("/bin/Debug/", StringComparison.OrdinalIgnoreCase);
+            string assemblyFile2 = assemblyFile1;
+            if (binDebugIdx >= 0)
+                assemblyFile2 = string.Concat(assemblyFile1[0..binDebugIdx], "/bin/Release/",
+                    assemblyFile1[(binDebugIdx + "/bin/Debug/".Length)..]);
+
+            assemblyFiles[i] = assemblyFile1;
+
+            if (fileSystem.FileExists(assemblyFile1))
+            {
+                if (fileSystem.FileExists(assemblyFile2) &&
+                    fileSystem.GetLastWriteTimeUtc(assemblyFile1) < fileSystem.GetLastWriteTimeUtc(assemblyFile2))
+                    assemblyFiles[i] = assemblyFile2;
+            }
+            else if (fileSystem.FileExists(assemblyFile2))
+                assemblyFiles[i] = assemblyFile2;
+            else
+            {
+                onError(string.Format(CultureInfo.CurrentCulture, string.Format(CultureInfo.CurrentCulture,
+                    "Assembly file '{0}' specified in sergen.json is not found! " +
+                    "This might happen when project is not successfully built or file name doesn't match the output DLL." +
+                    "Please check paths in sergen.json.", assemblyFile1)));
+                return null;
+            }
+        }
+
+        return assemblyFiles;
+    }
+
+    private static readonly char[] semicolonSplitter = [';'];
+    private static readonly char[] equalsSplitter = ['='];
+
+    public IDictionary<string, string?> GetGlobalUsings()
+    {
+        if (globalUsings is null)
+        {
+            globalUsings = new Dictionary<string, string?>(StringComparer.Ordinal);
+            if (getPropertyArgument?.Invoke("GlobalUsings") is string gs)
+            {
+                foreach (var g in gs.Split(semicolonSplitter, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var parts = g.Split(equalsSplitter, 2);
+                    if (parts.Length == 1)
+                        globalUsings[parts[0].Trim()] = null;
+                    else
+                        globalUsings[parts[0].Trim()] = parts[1].Trim();
+                }
+            }
+            else
+            {
+                var usings = GetProjectMSBuildInfo()?.Items?.Using;
+                if (usings != null)
+                    foreach (var u in usings)
+                    {
+                        if (string.IsNullOrEmpty(u.Identity) &&
+                            !string.Equals(u.Static, "true", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        globalUsings[u.Identity!] = u.Alias;
+                    }
+            }
+        }
+        return globalUsings;
+    }
+}

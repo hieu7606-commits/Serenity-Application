@@ -1,0 +1,290 @@
+import { FilterPanelTexts, Fluent, PropertyGridTexts, PropertyItem, isArrayLike, parseDecimal, setElementReadOnly } from "../../base";
+import { safeCast } from "../../compat";
+import { IBooleanValue, IDoubleValue, IGetEditValue, ISetEditValue, IStringValue, IValidateRequired } from "../../interfaces";
+import { type Widget } from "../widgets/widget";
+import { tryGetWidget } from "../widgets/widgetutils";
+import { Combobox } from "./combobox";
+
+/**
+ * Utility functions for working with editor widgets.
+ */
+export namespace EditorUtils {
+
+    /**
+     * Returns the display text of an editor's current value.
+     * @param editor - The editor widget.
+     * @returns The display text.
+     */
+    export function getDisplayText(editor: Widget<any>): string {
+
+        const combobox = Combobox.getInstance(editor.domNode);
+
+        if (combobox) {
+            const data = combobox.getSelectedItems();
+            if (!data)
+                return '';
+
+            return data.map(x => x.text).join(", ");
+        }
+
+        const value = getValue(editor);
+        if (value == null) {
+            return '';
+        }
+
+        if (typeof value === "string")
+            return value;
+
+        if (typeof value === "boolean")
+            return (value ? ((FilterPanelTexts.asTry().OperatorNames as any)["true"] ?? 'True') :
+                ((FilterPanelTexts.asTry().OperatorNames as any)["false"] ?? 'False'));
+
+        return value.toString();
+    }
+
+    const dummy: PropertyItem = { name: '_' };
+
+    /**
+     * Returns the current value of an editor.
+     * @param editor - The editor widget.
+     * @returns The value.
+     */
+    export function getValue(editor: Widget<any>): any {
+        const target: Record<string, any> = {};
+        saveValue(editor, dummy, target);
+        return target['_'];
+    }
+
+    /**
+     * Saves an editor's value into a target object.
+     * @param editor - The editor widget.
+     * @param item - The property item.
+     * @param target - The target object.
+     */
+    export function saveValue(editor: Widget<any>, item: PropertyItem, target: any): void {
+
+        const getEditValue = safeCast(editor, IGetEditValue);
+
+        if (getEditValue != null) {
+            getEditValue.getEditValue(item, target);
+            return;
+        }
+
+        const stringValue = safeCast(editor, IStringValue);
+        if (stringValue != null) {
+            target[item.name] = stringValue.get_value();
+            return;
+        }
+
+        const booleanValue = safeCast(editor, IBooleanValue);
+        if (booleanValue != null) {
+            target[item.name] = booleanValue.get_value();
+            return;
+        }
+
+        const doubleValue = safeCast(editor, IDoubleValue);
+        if (doubleValue != null) {
+            const value = doubleValue.get_value();
+            target[item.name] = (isNaN(value) ? null : value);
+            return;
+        }
+
+        if ((editor as any).getEditValue != null) {
+            (editor as any).getEditValue(item, target);
+            return;
+        }
+
+        if (Fluent.isInputLike(editor.domNode)) {
+            target[item.name] = editor.domNode.value;
+            return;
+        }
+    }
+
+    /**
+     * Sets the value of an editor.
+     * @param editor - The editor widget.
+     * @param value - The value to set.
+     */
+    export function setValue(editor: Widget<any>, value: any): void {
+        const source = { _: value };
+        loadValue(editor, dummy, source);
+    }
+
+    /**
+     * Loads a value from a source object into an editor.
+     * @param editor - The editor widget.
+     * @param item - The property item.
+     * @param source - The source object.
+     */
+    export function loadValue(editor: Widget<any>, item: PropertyItem, source: any): void {
+
+        const setEditValue = safeCast(editor, ISetEditValue);
+        if (setEditValue != null) {
+            setEditValue.setEditValue(source, item);
+            return;
+        }
+
+        const stringValue = safeCast(editor, IStringValue);
+        if (stringValue != null) {
+            let value = source[item.name];
+            if (value != null) {
+                value = value.toString();
+            }
+            stringValue.set_value(value);
+            return;
+        }
+
+        const booleanValue = safeCast(editor, IBooleanValue);
+        if (booleanValue != null) {
+            const value1 = source[item.name];
+            if (typeof (value1) === 'number') {
+                booleanValue.set_value(value1 > 0);
+            }
+            else {
+                booleanValue.set_value(!!value1);
+            }
+            return;
+        }
+
+        const doubleValue = safeCast(editor, IDoubleValue);
+        if (doubleValue != null) {
+            const d = source[item.name];
+            if (d == null || (typeof d == "string" && !d.trim().length)) {
+                doubleValue.set_value(null);
+            }
+            else if (typeof d === "string") {
+                doubleValue.set_value(parseDecimal(d));
+            }
+            else if (typeof d === "boolean") {
+                doubleValue.set_value((!!d ? 1 : 0));
+            }
+            else if (typeof d === "number") {
+                doubleValue.set_value(d);
+            }
+            return;
+        }
+
+        if ((editor as any).setEditValue != null) {
+            (editor as any).setEditValue(source, item);
+            return;
+        }
+
+        if (Fluent.isInputLike(editor.domNode)) {
+            const v = source[item.name];
+            editor.domNode.value = v ?? '';
+            return;
+        }
+    }
+
+    /**
+     * This functions sets readonly class and disabled (for select, radio, checkbox) or readonly attribute (for other inputs) on given elements
+     * or widgets. If a widget is passed and it has set_readOnly method it is called instead of setting readonly class or attributes.
+     * Note that if an element, instead of the widget attached to it is passed directly, this searchs for a widget attached to it.
+     * If you don't want this behavior, use setElementReadOnly method.
+     * @param elements 
+     * @param value 
+     */
+    export function setReadonly(elements: Element | Widget<any> | ArrayLike<Element | Widget>, value: boolean) {
+        elements = isArrayLike(elements) ? elements : [elements];
+        for (let i = 0; i < elements.length; i++) {
+            let el = elements[i];
+            if (el == null)
+                continue;
+
+            if (!(el instanceof Node)) {
+                if (typeof (el as any).set_readOnly === "function") {
+                    (el as any).set_readOnly(!!value);
+                    continue;
+                }
+                el = el.domNode;
+                if (!el)
+                    continue;
+            }
+            else {
+                const widget = tryGetWidget(el);
+                if (widget != null && typeof (widget as any).set_readOnly === "function") {
+                    (widget as any).set_readOnly(!!value);
+                    continue;
+                }
+            }
+
+            setElementReadOnly(el, value);
+        }
+    }
+
+    /**
+     * Legacy alias for setReadonly
+     */
+    export const setReadOnly = setReadonly;
+
+    /**
+     * Sets the required state of an editor.
+     * @param widget - The editor widget.
+     * @param isRequired - Whether the field is required.
+     */
+    export function setRequired(widget: Widget<any>, isRequired: boolean): void {
+        const req = safeCast(widget, IValidateRequired);
+        if (req != null) {
+            req.set_required(isRequired);
+        }
+        else if (Fluent.isInputLike(widget.domNode)) {
+            widget.domNode.classList.toggle('required', !!isRequired);
+        }
+        const gridField = widget.domNode.closest('.field');
+        const hasSupItem = gridField?.querySelector('sup');
+        const caption = gridField?.querySelector('.caption');
+        if (isRequired && !hasSupItem && caption) {
+            Fluent(<sup title={PropertyGridTexts.RequiredHint}>*</sup>)
+                .prependTo(caption);
+        }
+        else if (!isRequired && hasSupItem) {
+            Fluent(hasSupItem).remove();
+        }
+    }
+
+    /**
+     * Sets all editors within a container to read-only.
+     * @param container - The container element.
+     * @param readOnly - Whether to enable read-only mode.
+     */
+    export function setContainerReadOnly(container: ArrayLike<HTMLElement> | HTMLElement, readOnly: boolean) {
+
+        container = isArrayLike(container) ? container[0] : container;
+        if (!readOnly) {
+
+            if (!container.classList.contains('readonly-container'))
+                return;
+
+            container.classList.remove('readonly-container');
+            container.querySelectorAll(".editor.container-readonly").forEach(el => {
+                el.classList.remove('container-readonly');
+                EditorUtils.setReadOnly(el, false);
+            });
+
+            return;
+        }
+
+        container.classList.add('readonly-container');
+        container.querySelectorAll(".editor:not(.container-readonly)").forEach((el: HTMLElement) => {
+            const w = tryGetWidget(el) as any;
+            if (w != null) {
+                if (w['get_readOnly']) {
+                    if (w['get_readOnly']())
+                        return;
+                }
+                else if (el.matches('[readonly]') || el.matches('[disabled]') || el.matches('.readonly') || el.matches('.disabled'))
+                    return;
+
+                el.classList.add('container-readonly');
+                EditorUtils.setReadOnly(w, true);
+            }
+            else {
+                if (el.matches('[readonly]') || el.matches('[disabled]') || el.matches('.readonly') || el.matches('.disabled'))
+                    return;
+
+                el.classList.add('container-readonly');
+                setElementReadOnly(el, true);
+            }
+        });
+    }
+}

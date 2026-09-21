@@ -1,0 +1,988 @@
+﻿/**
+ * Locale settings for number formatting, mirroring .NET `NumberFormatInfo`.
+ * @remarks Used by {@link formatNumber}, {@link parseDecimal}, and {@link parseInteger} via {@link Culture}.
+ */
+export interface NumberFormat {
+    /** Character used as the decimal separator (e.g. `"."` or `","`). */
+    decimalSeparator: string;
+    /** Character used to group thousands (e.g. `","` or `"."`). */
+    groupSeparator?: string;
+    /** Default number of fractional digits for `"f"` / `"n"` / `"c"` / `"p"` formats. @defaultValue `2` (Invariant). */
+    decimalDigits?: number;
+    /** Symbol for positive numbers (rarely displayed). @defaultValue `"+"`. */
+    positiveSign?: string;
+    /** Symbol for negative numbers. @defaultValue `"-"`. */
+    negativeSign?: string;
+    /** String rendered for `NaN` values. */
+    nanSymbol?: string;
+    /** Symbol appended for percent (`"p"`) formatting. @defaultValue `"%"`. */
+    percentSymbol?: string;
+    /** Symbol appended for currency (`"c"`) formatting. @defaultValue `"$"`. */
+    currencySymbol?: string;
+}
+
+/**
+ * Locale settings for date/time formatting, mirroring .NET `DateTimeFormatInfo`.
+ * @remarks Consumed by {@link formatDate} and {@link parseDate} via {@link Culture}.
+ */
+export interface DateFormat {
+    /** Character separating date parts (e.g. `"/"` or `"."`). */
+    dateSeparator?: string;
+    /** Default date-only format string (e.g. `"dd/MM/yyyy"`). */
+    dateFormat?: string;
+    /** Token order for parsing ambiguous numeric dates: `"dmy"`, `"mdy"`, or `"ymd"`. */
+    dateOrder?: string;
+    /** Default combined date+time format string (e.g. `"dd/MM/yyyy HH:mm:ss"`). */
+    dateTimeFormat?: string;
+    /** Designator for AM hours (used with `t`/`tt` tokens). @defaultValue `"AM"`. */
+    amDesignator?: string;
+    /** Designator for PM hours (used with `t`/`tt` tokens). @defaultValue `"PM"`. */
+    pmDesignator?: string;
+    /** Character separating time parts. @defaultValue `":"`. */
+    timeSeparator?: string;
+    /** Index of the first day of the week (`0` = Sunday, `1` = Monday). */
+    firstDayOfWeek?: number;
+    /** Full day names starting with Sunday — 7 entries. */
+    dayNames?: string[];
+    /** Abbreviated day names (e.g. `"Sun"`, `"Mon"`). — 7 entries. */
+    shortDayNames?: string[];
+    /** Two-letter day names (e.g. `"Su"`, `"Mo"`). — 7 entries. */
+    minimizedDayNames?: string[];
+    /** Full month names starting with January — 12 entries plus a trailing empty slot for compatibility. */
+    monthNames?: string[];
+    /** Abbreviated month names (e.g. `"Jan"`, `"Feb"`). — 12 entries plus a trailing empty slot. */
+    shortMonthNames?: string[];
+}
+
+/**
+ * Combined locale settings, mirroring .NET `CultureInfo`.
+ * @remarks Extends both {@link NumberFormat} and {@link DateFormat} with string comparison helpers.
+ */
+export interface Locale extends NumberFormat, DateFormat {
+    /**
+     * Locale-aware string comparator, analogous to `String.Compare`.
+     * @param a - First string to compare (may be `null`).
+     * @param b - Second string to compare (may be `null`).
+     * @returns Negative if `a < b`, positive if `a > b`, `0` if equal.
+     */
+    stringCompare?: (a: string, b: string) => number;
+    /**
+     * Locale-aware upper-casing function.
+     * @param a - String to convert.
+     * @returns The upper-cased string.
+     */
+    toUpper?: (a: string) => string;
+}
+
+/**
+ * Invariant locale with US-English / POSIX defaults, analogous to `CultureInfo.InvariantCulture`.
+ * @remarks Used as the fallback for {@link Culture} and as the baseline for parsing/formatting when no culture is supplied.
+ */
+export let Invariant: Locale = {
+    decimalSeparator: '.',
+    groupSeparator: ',',
+    decimalDigits: 2,
+    negativeSign: '-',
+    positiveSign: '+',
+    percentSymbol: '%',
+    currencySymbol: '$',
+    dateSeparator: '/',
+    dateOrder: 'mdy',
+    dateFormat: 'MM/dd/yyyy',
+    dateTimeFormat: 'MM/dd/yyyy HH:mm:ss',
+    amDesignator: 'AM',
+    pmDesignator: 'PM',
+    timeSeparator: ':',
+    firstDayOfWeek: 0,
+    dayNames: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    shortDayNames: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    minimizedDayNames: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
+    monthNames: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', ''],
+    shortMonthNames: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', ''],
+    stringCompare: (a, b) => a < b ? -1 : (a > b ? 1 : 0)
+}
+
+
+
+/**
+ * Current culture used by all formatting and parsing helpers, analogous to `CultureInfo.CurrentCulture`.
+ * @remarks
+ * Initialized by {@link resetCultureSettings}. When a `<script id="ScriptCulture">` element containing a JSON object is present (rendered by `_LayoutHead.cshtml`), its values override the defaults. The `DecimalSeparator` / `GroupSeparator` keys are mapped explicitly; remaining keys are camel-cased from PascalCase.
+ */
+export let Culture: Locale;
+
+/**
+ * Resets {@link Culture} to its default values derived from {@link Invariant}.
+ * @remarks
+ * - Sets `dateOrder` to `"dmy"`, `dateFormat` to `"dd/MM/yyyy"`, and installs a `stringCompare` based on `String.prototype.localeCompare` with `document.documentElement.lang` when available.
+ * - If a `<script id="ScriptCulture">` JSON block exists, its properties override the defaults (with special handling for `DecimalSeparator` / `GroupSeparator`).
+ * - Exports in `vite8-symbol-typeinfo-workaround.md` note that no `Symbol.typeInfo` side-effects occur here.
+ */
+export function resetCultureSettings() {
+
+    Culture = {
+        decimalSeparator: '.',
+        groupSeparator: ',',
+        dateSeparator: '/',
+        dateOrder: 'dmy',
+        dateFormat: 'dd/MM/yyyy',
+        dateTimeFormat: 'dd/MM/yyyy HH:mm:ss',
+        stringCompare: Invariant.stringCompare
+    };
+
+    let lang = typeof document !== "undefined" ? document.documentElement?.lang : undefined;
+    if (lang == "")
+        lang = void 0;
+    if (lang !== void 0) {
+        try {
+            "a".localeCompare("b", lang);
+        }
+        catch {
+            lang = undefined;
+        }
+    }
+    Culture.stringCompare = (a, b) => a == null ? (b == null ? 0 : -1) : (b == null ? 1 : a.localeCompare(b, lang));
+
+    let k: string;
+    for (k in Invariant)
+        if ((Culture as any)[k] === undefined && Object.prototype.hasOwnProperty.call(Invariant, k))
+            (Culture as any)[k] = (Invariant as any)[k];
+
+    if (typeof document !== "undefined" && (k = document.querySelector('script#ScriptCulture')?.textContent?.trim())?.length) {
+        const sc = JSON.parse(k);
+        if (sc.DecimalSeparator != null)
+            Culture.decimalSeparator = sc.DecimalSeparator;
+        if (sc.GroupSeparator != null && sc.GroupSeparator != Culture.decimalSeparator)
+            Culture.groupSeparator = sc.GroupSeparator;
+        else if (Culture.groupSeparator == Culture.decimalSeparator)
+            Culture.groupSeparator = Culture.decimalSeparator == '.' ? ',' : '.';
+
+        delete sc.GroupSeparator;
+        delete sc.DecimalSeparator;
+        for (k in sc) {
+            if ((Culture as any)[k] === undefined && Object.prototype.hasOwnProperty.call(sc, k))
+                (Culture as any)[k.charAt(0).toLowerCase() + k.substring(1)] = sc[k];
+        }
+    }
+}
+
+resetCultureSettings();
+
+function insertGroupSeperator(num: string, dec: string, grp: string, neg: string) {
+    let decPart: any = null;
+    const decIndex = num.indexOf(dec);
+    if (decIndex > 0) {
+        decPart = num.substring(decIndex);
+        num = num.substring(0, decIndex);
+    }
+
+    const negative = num.startsWith(neg);
+    if (negative) {
+        num = num.substring(1);
+    }
+
+    let groupSize = 3;
+    if (num.length < groupSize) {
+        return (negative ? neg : '') + (decPart ? num + decPart : num);
+    }
+
+    let index = num.length;
+    let s = '';
+    let done = false;
+    while (!done) {
+        let length = groupSize;
+        let startIndex = index - length;
+        if (startIndex < 0) {
+            groupSize += startIndex;
+            length += startIndex;
+            startIndex = 0;
+            done = true;
+        }
+
+        if (!length)
+            break;
+
+        const part = num.substring(startIndex, startIndex + length);
+        if (s.length)
+            s = part + grp + s;
+        else
+            s = part;
+        index -= length;
+    }
+
+    if (negative)
+        s = '-' + s;
+    return decPart ? s + decPart : s;
+}
+
+const _formatRE = /\{\{|\}\}|\{[^\}\{]+\}/g;
+
+function _formatString(format: string, l: Locale, values: IArguments, from: number) {
+
+    return format.replace(_formatRE,
+        function (m) {
+            if (m === '{{' || m === '}}')
+                return m.charAt(0);
+            const index = parseInt(m.substring(1), 10);
+            const value = values[index + from];
+            if (value == null) {
+                return '';
+            }
+            let formatSpec = null;
+            const formatIndex = m.indexOf(':');
+            if (formatIndex > 0) {
+                formatSpec = m.substring(formatIndex + 1, m.length - 1);
+            }
+            return _formatObject(value, formatSpec, l);
+        });
+};
+
+
+/**
+ * Formats a string by replacing `{index[:format]}` placeholders with the supplied arguments, using {@link Culture} for locale-aware value formatting.
+ * @param format - Composite format string (e.g. `"Hello {0}, you have {1:n2} messages"`). `{{` / `}}` are escaped to a single brace.
+ * @param prm - Values to substitute; each may be a number, `Date`, or any object with a `format(formatSpec, locale)` method. Nullish values render as empty strings.
+ * @returns The formatted string.
+ * @example
+ * ```ts
+ * stringFormat("Hello {0}, balance {1:c}", "Alice", 1234.5); // uses Culture currency symbol
+ * ```
+ */
+export function stringFormat(format: string, ...prm: any[]): string {
+    return _formatString(format, Culture, arguments, 1);
+}
+
+/**
+ * Locale-specific variant of {@link stringFormat}.
+ * @param l - Locale whose settings are applied when formatting each argument.
+ * @param format - Composite format string with `{index[:format]}` placeholders.
+ * @param prm - Values to substitute. Numbers and Dates are formatted with `l`; objects with a `format` method are delegated to that method.
+ * @returns The formatted string.
+ */
+export function stringFormatLocale(l: Locale, format: string, ...prm: any[]): string {
+    return _formatString(format, l, arguments, 2);
+}
+
+function _formatObject(obj: any, format: string, fmt?: Locale): string {
+    if (typeof (obj) === 'number')
+        return formatNumber(obj, format, fmt);
+    else if (Object.prototype.toString.call(obj) === '[object Date]')
+        return formatDate(obj, format, fmt);
+    else if (obj.format)
+        return obj.format(format, fmt ?? Culture);
+    return String(obj);
+};
+
+/**
+ * Rounds a number to the specified number of fractional digits using "away from zero" rounding.
+ * @param num - Value to round; `undefined` / `NaN` is forwarded to `Math.round` semantics.
+ * @param d - Number of digits after the decimal point. @defaultValue `0` (integer rounding).
+ * @returns The rounded value. `0` is normalized to `0` (not `-0`).
+ * @remarks
+ * Unlike `Math.round`, `1.5` rounds to `2` and `-1.5` rounds to `-2`. Implemented via exponent shifting to avoid floating-point artifacts.
+ * @example
+ * ```ts
+ * round(1.005, 2); // 1.01
+ * round(-1.5);     // -2
+ * ```
+ */
+export let round = (num: number, d?: number) => {
+    if (typeof num == "undefined" || isNaN(num))
+        return Math.round(num);
+
+    num = +num;
+    if (num === 0)
+        return 0;
+
+    d = d || 0;
+
+    const s = num < 0 ? -1 : 1;
+    num = num < 0 ? -num : num;
+    if (d === 0)
+        return Math.round(num) * s;
+
+    const ep = d >= 0 ? ("e+" + d) : ("e" + d);
+    const em = d >= 0 ? ("e-" + d) : ("e+" + -d);
+    return +(Math.round(num + ep as any) + em) * s;
+};
+
+/**
+ * Truncates a number toward zero to an integer.
+ * @param n - Value to truncate; `null` / `undefined` returns `null`.
+ * @returns The integer part of `n` (toward zero), or `null` for nullish input.
+ * @example
+ * ```ts
+ * trunc(1.9);  // 1
+ * trunc(-1.9); // -1
+ * ```
+ */
+export let trunc = (n: number): number => n != null ? (n > 0 ? Math.floor(n) : Math.ceil(n)) : null;
+
+/**
+ * Formats a number using .NET-style numeric format strings and locale settings.
+ * @param num - Value to format; `null` / `undefined` yields `""` and `NaN` yields `nanSymbol`.
+ * @param format - Format specifier. `"g"` (general), `"d"`/`"x"`/`"e"`/`"f"`/`"n"`/`"c"`/`"p"`, or a custom pattern (`"#,##0.00"`, `"000"`, etc.). @defaultValue `"g"`.
+ * @param decOrLoc - Either a {@link Locale} / {@link NumberFormat} object, or the decimal separator string for a lightweight inline locale.
+ * @param grp - Group separator when `decOrLoc` is a decimal-separator string. Ignored otherwise.
+ * @returns The formatted number string, applying grouping, decimal separator, and locale symbols from `decOrLoc` or {@link Culture}.
+ * @remarks
+ * - `"n"` / `"N"` insert grouping; `"c"`/`"p"` append `currencySymbol`/`percentSymbol` (percent multiplies by 100).
+ * - Custom patterns quote literals with `'` and escape with `\`.
+ * @example
+ * ```ts
+ * formatNumber(1234.5, "n2"); // e.g. "1,234.50" depending on Culture
+ * formatNumber(0.42, "p0");   // e.g. "42%"
+ * ```
+ */
+export function formatNumber(num: number, format?: string, decOrLoc?: string | NumberFormat, grp?: string): string {
+
+    if (num == null)
+        return "";
+
+    const fmt: NumberFormat = typeof decOrLoc !== "string" ? (decOrLoc ?? Culture) : {
+        decimalSeparator: decOrLoc,
+        groupSeparator: grp ?? (decOrLoc == "," ? "." : ",")
+    }
+
+    if (isNaN(num)) {
+        return fmt.nanSymbol ?? Culture.nanSymbol;
+    }
+
+    if (format === 'i') {
+        return num.toString();
+    }
+
+    if (format == null || format == '') {
+        format = 'g';
+    }
+
+    const dec = fmt.decimalSeparator ?? Culture.decimalSeparator;
+    grp = grp ?? fmt.groupSeparator ?? Culture.groupSeparator;
+    const neg = fmt.negativeSign ?? Culture.negativeSign;
+
+    let s = '';
+    let precision = -1;
+
+    if (format.length > 1) {
+        precision = parseInt(format.substring(1), 10);
+    }
+
+    const fs = format.charAt(0);
+    switch (fs) {
+        case 'g':
+        case 'G':
+            if (precision != -1)
+                s = num.toFixed(precision);
+            else
+                s = num.toString();
+            if (dec != '.')
+                s = s.replace('.', dec);
+            break;
+        case 'd':
+        case 'D':
+            s = parseInt(Math.abs(num) as any).toString();
+            if (precision != -1)
+                s = s.padStart(precision, '0');
+            if (num < 0)
+                s = neg + s;
+            break;
+        case 'x': case 'X':
+            s = parseInt(Math.abs(num) as any).toString(16);
+            if (fs == 'X')
+                s = s.toUpperCase();
+            if (precision != -1)
+                s = s.padStart(precision, '0');
+            break;
+        case 'e':
+        case 'E':
+            if (precision == -1)
+                s = num.toExponential(6);
+            else
+                s = num.toExponential(precision);
+            if (fs == 'E')
+                s = s.toUpperCase();
+            break;
+        case 'f':
+        case 'F':
+        case 'n':
+        case 'N':
+            if (precision == -1) {
+                precision = fmt.decimalDigits ?? Culture.decimalDigits;
+            }
+            s = num.toFixed(precision).toString();
+            if (precision && (dec != '.')) {
+                const index = s.indexOf('.');
+                s = s.substring(0, index) + dec + s.substring(index + 1);
+            }
+            if ((fs == 'n') || (fs == 'N')) {
+                s = insertGroupSeperator(s, dec, grp, neg);
+            }
+            break;
+        case 'c': case 'C':
+        case 'p': case 'P':
+            if (precision == -1) {
+                precision = fmt.decimalDigits ?? Culture.decimalDigits;
+            }
+            let symbol: string;
+            if (fs === 'p' || fs == 'P') {
+                num *= 100;
+                symbol = fmt.percentSymbol ?? Culture.percentSymbol;
+            }
+            else {
+                symbol = fmt.currencySymbol ?? Culture.currencySymbol;
+            }
+            s = num.toFixed(precision).toString();
+            if (precision && (dec != '.')) {
+                const index = s.indexOf('.');
+                s = s.substring(0, index) + dec + s.substring(index + 1);
+            }
+            s = insertGroupSeperator(s, dec, grp, neg) + symbol;
+            break;
+
+        default:
+            let prefix = '';
+            let mid = '';
+            let suffix = '';
+            let endPrefix = false;
+            let inQuote = false;
+            for (let i = 0; i < format.length; i++) {
+                let c = format.charAt(i);
+                if (c == "'") {
+                    inQuote = !inQuote;
+                    continue;
+                }
+                else if (!inQuote) {
+                    if (c == '\\') {
+                        c = (format.charAt(i + 1) || '');
+                        i++;
+                    }
+                    else if (c == '#' || c == ',' || c == '.' || c == '0') {
+                        endPrefix = true;
+                        mid += c;
+                        continue;
+                    }
+                }
+                endPrefix ? (suffix += c) : (prefix += c);
+            }
+
+            format = mid;
+
+            let r = "";
+            if (format.indexOf(".") > -1) {
+                let dp = dec;
+                let df = format.substring(format.lastIndexOf(".") + 1);
+                num = roundNumber(num, df.length);
+                let dv = num % 1;
+                let ds = new String(dv.toFixed(df.length));
+                ds = ds.substring(ds.lastIndexOf(".") + 1);
+                for (let i = 0; i < df.length; i++) {
+                    if (df.charAt(i) == '#' && ds.charAt(i) != '0') {
+                        dp += ds.charAt(i);
+                        continue;
+                    }
+                    else if (df.charAt(i) == '#' && ds.charAt(i) == '0') {
+                        let notParsed = ds.substring(i);
+                        if (notParsed.match('[1-9]')) {
+                            dp += ds.charAt(i);
+                            continue;
+                        }
+                        else
+                            break;
+                    }
+                    else if (df.charAt(i) == "0")
+                        dp += ds.charAt(i);
+                    else
+                        dp += df.charAt(i);
+                }
+                r += dp;
+            }
+            else
+                num = Math.round(num);
+
+            let ones = Math.floor(num);
+            if (num < 0)
+                ones = Math.ceil(num);
+            let of = "";
+            if (format.indexOf(".") == -1)
+                of = format;
+            else
+                of = format.substring(0, format.indexOf("."));
+
+            let op = "";
+            if (!(ones == 0 && of.substring(of.length - 1) == '#')) {
+                // find how many digits are in the group
+                let oneText = new String(Math.abs(ones));
+                let gl = 9999;
+                if (of.lastIndexOf(",") != -1)
+                    gl = of.length - of.lastIndexOf(",") - 1;
+                let gc = 0;
+                for (let i = oneText.length - 1; i > -1; i--) {
+                    op = oneText.charAt(i) + op;
+                    gc++;
+                    if (gc == gl && i != 0) {
+                        op = grp + op;
+                        gc = 0;
+                    }
+                }
+
+                // account for any pre-data padding
+                if (of.length > op.length) {
+                    let padStart = of.indexOf('0');
+                    if (padStart != -1) {
+                        let padLen = of.length - padStart;
+                        // pad to left with 0's or group char
+                        let pos = of.length - op.length - 1;
+                        while (op.length < padLen) {
+                            let pc = of.charAt(pos);
+                            // replace with real group char if needed
+                            if (pc == ',')
+                                pc = grp;
+                            op = pc + op;
+                            pos--;
+                        }
+                    }
+                }
+            }
+
+            if (!op && of.indexOf('0', of.length - 1) !== -1)
+                op = '0';
+
+            r = op + r;
+            if (num < 0)
+                r = neg + r;
+
+            if (r.lastIndexOf(dec) == r.length - 1) {
+                r = r.substring(0, r.length - 1);
+            }
+
+            return prefix + r + suffix;
+    }
+
+    return s;
+}
+
+/**
+ * Parses a string as an integer using {@link Culture} grouping rules.
+ * @param s - String to parse; `null` or whitespace yields `null`. Group separators for the current culture are stripped before validation.
+ * @returns The parsed integer, `null` for empty/null input, or `NaN` when the string is not a valid integer.
+ * @remarks
+ * Unlike `parseInt`, only strings matching `^[+-]?\d+$` (after group-separator removal) are accepted; trailing characters cause `NaN`.
+ */
+export function parseInteger(s: string): number {
+    if (s == null)
+        return null;
+    s = s.toString().trim();
+    if (!s.length)
+        return null;
+    let ts = Culture.groupSeparator;
+    if (s && s.length && s.indexOf(ts) > 0) {
+        s = s.replace(new RegExp("(\\b\\d{1,3})\\" + ts + "(?=\\d{3}(\\D|$))", "g"), '$1');
+    }
+    if (!(/^[-\+]?\d+$/.test(s)))
+        return NaN;
+    return parseInt(s, 10);
+}
+
+/**
+ * Parses a string as a decimal number using {@link Culture} group and decimal separators.
+ * @param s - String to parse; `null` or whitespace yields `null`. Group separators are stripped and the locale decimal separator is normalized to `"."` before `parseFloat`.
+ * @returns The parsed number, `null` for empty/null input, or `NaN` when the string is not a valid decimal.
+ * @remarks Only patterns matching `^\s*[+-]?(\d*)[decimalSep]?(\d*)\s*$` are accepted.
+ */
+export function parseDecimal(s: string): number {
+    if (s == null)
+        return null;
+
+    s = s.toString().trim();
+    if (s.length == 0)
+        return null;
+
+    let ts = Culture.groupSeparator;
+
+    if (s && s.length && s.indexOf(ts) > 0) {
+        s = s.replace(new RegExp("(\\b\\d{1,3})\\" + ts + "(?=\\d{3}(\\D|$))", "g"), '$1');
+    }
+
+    if (!(new RegExp("^\\s*([-\\+])?(\\d*)\\" + Culture.decimalSeparator + "?(\\d*)\\s*$").test(s)))
+        return NaN;
+
+    return parseFloat(s.toString().replace(Culture.decimalSeparator, '.'));
+}
+
+/**
+ * Internal helper that rounds `n` to `dec` decimal places and ensures trailing zeros are preserved before parsing back to a number.
+ * @param n - Value to round.
+ * @param dec - Number of fractional digits. When falsy, integer rounding is applied.
+ * @returns The rounded numeric value.
+ */
+function roundNumber(n: number, dec?: number): number {
+    let power = Math.pow(10, dec || 0);
+    let value = (Math.round(n * power) / power).toString();
+    // ensure the decimal places are there
+    if (dec > 0) {
+        let dp = value.indexOf(".");
+        if (dp == -1) {
+            value += '.';
+            dp = 0;
+        }
+        else {
+            dp = value.length - (dp + 1);
+        }
+        while (dp < dec) {
+            value += '0';
+            dp++;
+        }
+    }
+    return parseFloat(value);
+}
+
+/**
+ * Normalizes a value to an ID suitable for entity keys.
+ * @param id - Candidate ID: a number is returned as-is; a string is trimmed and, when it is a plain integer with fewer than 15 characters, parsed to a number; otherwise the trimmed string is returned. `null`, `undefined`, or whitespace yields `null`.
+ * @returns The normalized ID (`number` or `string`) or `null` for empty input.
+ * @example
+ * ```ts
+ * toId(" 42 "); // 42
+ * toId("abc");  // "abc"
+ * toId("");     // null
+ * ```
+ */
+export function toId(id: any): any {
+    if (id == null)
+        return null;
+    if (typeof id == "number")
+        return id;
+    if (typeof id == "string")
+        id = id.trim()
+    if (!id.length)
+        return null;
+    if (id.length >= 15 || !(/^-?\d+$/.test(id)))
+        return id;
+    return parseInt(id, 10);
+}
+
+const _dateFormatRE = /'.*?[^\\]'|dddd|ddd|dd|d|MMMM|MMM|MM|M|yyyy|yy|y|hh|h|HH|H|mm|m|ss|s|tt|t|fff|ff|f|zzz|zz|z|\//g;
+
+/**
+ * Formats a `Date` (or date string) using .NET-style format tokens and locale settings.
+ * @param d - Date to format, or an ISO / locale date string that is first parsed. Falsy yields `""`.
+ * @param format - Format string. Special single-letter presets: `"d"` (short date), `"g"` (short datetime without seconds), `"G"` (full datetime), `"t"` (time only), `"s"` (sortable `yyyy-MM-ddTHH:mm:ss`), `"u"` (UTC sortable), `"U"` (locale datetime in UTC), `"i"`/`"id"`/`"it"` (JS `toString` variants). Prefixing with `"%"` forces a custom token (e.g. `"%M"`). When `null`, the locale's `dateFormat` is used.
+ * @param locale - Locale overrides token names and separators. Defaults to {@link Culture}.
+ * @returns The formatted date string, or `""` / the original string on parse failure.
+ * @example
+ * ```ts
+ * formatDate(new Date(2019, 0, 1), "yyyy-MM-dd");                // "2019-01-01"
+ * formatDate(new Date(2019, 0, 1, 12), "yyyy-MM-dd HH:mm:ss");   // "2019-01-01 12:00:00"
+ * formatDate(new Date(2019, 0, 1, 12), "yyyy-MM-dd HH:mm:ss.fff"); // "2019-01-01 12:00:00.000"
+ * formatDate(new Date(2019, 0, 1, 12), "yyyy-MM-dd HH:mm:ss.fff tt"); // "2019-01-01 12:00:00.000 PM"
+ * ```
+ */
+export function formatDate(d: Date | string, format?: string, locale?: Locale) {
+    if (!d)
+        return '';
+
+    let date: Date;
+    if (typeof d == "string") {
+        date = parseDate(d, locale?.dateOrder);
+        if (!date)
+            return '';
+
+        if (isNaN(date.valueOf()))
+            return d;
+    }
+    else
+        date = d;
+
+    if (format == 'i')
+        return date.toString();
+    if (format == 'id')
+        return date.toDateString();
+    if (format == 'it')
+        return date.toTimeString();
+
+    if (locale == null)
+        locale = Culture;
+
+    if (format == null || format == "d")
+        format = locale.dateFormat ?? Culture.dateFormat;
+    else if (format.length == 1) {
+        switch (format) {
+            case "g": format = (locale.dateTimeFormat ?? Culture.dateTimeFormat).replace(":ss", ""); break;
+            case "G": format = (locale.dateTimeFormat ?? Culture.dateTimeFormat); break;
+            case "s": format = "yyyy-MM-ddTHH:mm:ss"; break;
+            case 't': format = (locale.dateTimeFormat && locale.dateFormat) ? locale.dateTimeFormat.replace(locale.dateFormat + " ", "") : "HH:mm"; break;
+            case 'u':
+            case 'U':
+                format = format == 'u' ? 'yyyy-MM-ddTHH:mm:ss.fffZ' : locale.dateTimeFormat ?? Culture.dateTimeFormat;
+                date = new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(),
+                    date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds(), date.getUTCMilliseconds());
+                break;
+        }
+    }
+
+    if (format.charAt(0) == '%') {
+        format = format.substring(1);
+    }
+
+    const re = _dateFormatRE;
+    const sb = [];
+
+    re.lastIndex = 0;
+    while (true) {
+        const index = re.lastIndex;
+        const match = re.exec(format);
+
+        sb.push(format.slice(index, match ? match.index : format.length));
+        if (!match) {
+            break;
+        }
+
+        const fs = match[0];
+        let part = fs;
+        let n: number;
+        switch (fs) {
+            case '/':
+                part = locale.dateSeparator ?? Culture.dateSeparator;
+                break;
+            case 'dddd':
+                part = (locale.dayNames ?? Culture.dayNames)[date.getDay()];
+                break;
+            case 'ddd':
+                part = (locale.shortDayNames ?? Culture.shortDayNames)[date.getDay()];
+                break;
+            case 'dd':
+                part = date.getDate().toString().padStart(2, '0');
+                break;
+            case 'd':
+                part = date.getDate().toString();
+                break;
+            case 'MMMM':
+                part = (locale.monthNames ?? Culture.monthNames)[date.getMonth()];
+                break;
+            case 'MMM':
+                part = (locale.shortMonthNames ?? Culture.shortMonthNames)[date.getMonth()];
+                break;
+            case 'MM':
+                part = (date.getMonth() + 1).toString().padStart(2, '0');
+                break;
+            case 'M':
+                part = (date.getMonth() + 1).toString();
+                break;
+            case 'yyyy':
+                part = date.getFullYear().toString().padStart(4, '0');
+                break;
+            case 'yy':
+                part = (date.getFullYear() % 100).toString().padStart(2, '0');
+                break;
+            case 'y':
+                part = (date.getFullYear() % 100).toString();
+                break;
+            case 'h': case 'hh':
+                n = date.getHours() % 12;
+                if (!n) {
+                    part = '12';
+                }
+                else {
+                    part = n.toString();
+                    if (fs == 'hh')
+                        part = part.padStart(2, '0');
+                }
+                break;
+            case 'HH':
+                part = date.getHours().toString().padStart(2, '0');
+                break;
+            case 'H':
+                part = date.getHours().toString();
+                break;
+            case 'mm':
+                part = date.getMinutes().toString().padStart(2, '0');
+                break;
+            case 'm':
+                part = date.getMinutes().toString();
+                break;
+            case 'ss':
+                part = date.getSeconds().toString().padStart(2, '0');
+                break;
+            case 's':
+                part = date.getSeconds().toString();
+                break;
+            case 't': case 'tt':
+                part = (date.getHours() < 12) ? (locale.amDesignator ?? Culture.amDesignator) : (locale.pmDesignator ?? Culture.pmDesignator);
+                if (fs == 't') {
+                    part = part.charAt(0);
+                }
+                break;
+            case 'fff':
+                part = date.getMilliseconds().toString().padStart(3, '0');
+                break;
+            case 'ff':
+                part = date.getMilliseconds().toString().padStart(3, '0').substring(0, 2);
+                break;
+            case 'f':
+                part = date.getMilliseconds().toString().padStart(3, '0').charAt(0);
+                break;
+            case 'z':
+                n = date.getTimezoneOffset() / 60;
+                part = ((n >= 0) ? '-' : '+') + Math.floor(Math.abs(n));
+                break;
+            case 'zz':
+            case 'zzz':
+                n = date.getTimezoneOffset() / 60;
+                part = ((n >= 0) ? '-' : '+') +
+                    Math.floor(Math.abs(n)).toString().padStart(2, '0');
+                if (fs == 'zzz') {
+                    part += (locale.timeSeparator ?? Culture.timeSeparator) +
+                        Math.abs(date.getTimezoneOffset() % 60).toString().padStart(2, '0');
+                }
+                break;
+            default:
+                if (part.charAt(0) == '\'') {
+                    part = part.substring(1, part.length - 1).replace(/\\'/g, '\'');
+                }
+                break;
+        }
+        sb.push(part);
+    }
+
+    return sb.join('');
+}
+
+/**
+ * Formats a date as an ISO 8601 UTC timestamp (`yyyy-MM-ddTHH:mm:ss.sssZ`).
+ * @param d - Date to format. `null` / `undefined` yields `""`.
+ * @returns The UTC ISO string with zero-padded components, or `""` for nullish input.
+ */
+export function formatISODateTimeUTC(d: Date): string {
+    if (d == null)
+        return "";
+    let zeropad = function (num: number) { return ((num < 10) ? '0' : '') + num; };
+    let str = d.getUTCFullYear() + "-" +
+        zeropad(d.getUTCMonth() + 1) + "-" +
+        zeropad(d.getUTCDate()) + "T" +
+        zeropad(d.getUTCHours()) + ":" +
+        zeropad(d.getUTCMinutes());
+    let secs = Number(d.getUTCSeconds() + "." +
+        ((d.getUTCMilliseconds() < 100) ? '0' : '') +
+        zeropad(d.getUTCMilliseconds()));
+    str += ":" + zeropad(secs) + "Z";
+    return str;
+}
+
+let isoRegexp = /(\d{4,})(?:-(\d{1,2})(?:-(\d{1,2})(?:[T ](\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d+))?)?(?:(Z)|([+-])(\d{1,2})(?::(\d{1,2}))?)?)?)?)?/;
+
+/**
+ * Parses a string that is expected to be in ISO 8601 UTC date/time format.
+ * @param s - String to parse; `null` yields `null`, empty string yields `null`, and non-ISO strings yield an invalid `Date` (`NaN`). Bare dates (`yyyy-MM-dd`, length 10) are normalized to midnight UTC.
+ * @returns The parsed `Date`, `null` for null/empty input, or an invalid `Date` when the string does not match the ISO pattern.
+ */
+export function parseISODateTime(s: string): Date {
+    if (s == null)
+        return null;
+
+    if (typeof s !== "string")
+        s = s + "";
+
+    if (!s.length)
+        return null;
+
+    if (!isoRegexp.test(s))
+        return new Date(NaN);
+
+    return new Date(s + (s.length == 10 ? "T00:00:00" : ""));
+}
+
+/**
+ * Parses a date string in ISO 8601, locale, or JS date format.
+ * @param s - String to parse; `null` / empty / whitespace yields `null`. ISO prefixes (`yyyy-MM-dd` / `yyyy-MM-ddTHH:mm:ss`) are delegated to {@link parseISODateTime}; strings containing a space and colon are split into date + time halves. Numeric parts are validated and two-digit years are expanded using a 10-year sliding window.
+ * @param dateOrder - Override for ambiguous numeric dates (`"dmy"` / `"mdy"` / `"ymd"`). Defaults to {@link Culture}.`dateOrder`.
+ * @returns The parsed `Date`, `null` for empty input, or an invalid `Date` (`NaN`) when the string is not a valid date.
+ */
+export function parseDate(s: string, dateOrder?: string): Date {
+    if (!s || !s.length)
+        return null;
+
+    s = s.trim();
+    if (!s.length)
+        return null;
+
+    if (s.length >= 10 && s.charAt(4) === '-' && s.charAt(7) === '-' &&
+        (s.length === 10 || (s.length > 10 && s.charAt(10) === 'T'))) {
+        return parseISODateTime(s);
+    }
+
+    if (s.indexOf(' ') > 0 && s.indexOf(':') > s.indexOf(' ') + 1) {
+        const datePart = parseDate(s.substring(0, s.indexOf(' ')));
+        if (!datePart || isNaN(datePart.valueOf()))
+            return new Date(NaN);
+        return parseISODateTime(formatDate(datePart, 'yyyy-MM-dd') + 'T' + s.substring(s.indexOf(' ') + 1).trim());
+    }
+
+    let d: number, m: number, y: number;
+    let dArray = splitDateString(s);
+    if (dArray.length == 3) {
+        if (dArray.some(x => !/^[0-9]+$/.test(x)))
+            return new Date(NaN);
+
+        dateOrder = dateOrder || Culture.dateOrder;
+        switch (dateOrder) {
+            case "dmy":
+                d = parseInt(dArray[0], 10);
+                m = parseInt(dArray[1], 10) - 1;
+                y = parseInt(dArray[2], 10);
+                break;
+            case "ymd":
+                d = parseInt(dArray[2], 10);
+                m = parseInt(dArray[1], 10) - 1;
+                y = parseInt(dArray[0], 10);
+                break;
+            case "mdy":
+            default:
+                d = parseInt(dArray[1], 10);
+                m = parseInt(dArray[0], 10) - 1;
+                y = parseInt(dArray[2], 10);
+                break;
+        }
+
+        if (isNaN(d) || isNaN(m) || isNaN(y) || d < 1 || d > 31 || m < 0 || m > 11 || y > 9999 || y < 0)
+            return new Date(NaN);
+
+        if (y < 100) {
+            let fullYear = new Date().getFullYear();
+            let shortYearCutoff = (fullYear % 100) + 10;
+            y += fullYear - fullYear % 100 + (y <= shortYearCutoff ? 0 : -100);
+        }
+
+        return new Date(y, m, d);
+    }
+    else if (dArray.length == 1) {
+        try {
+            return new Date(dArray[0]);
+        }
+        catch (e) {
+            return new Date(NaN);
+        }
+    }
+
+    return new Date(NaN);
+}
+
+/**
+ * Splits a date string into its numeric parts using the first detected separator.
+ * @param s - String to split; trimmed before inspection. `null` / empty yields `null`.
+ * @returns An array of substrings split by `"/"`, `"."`, `"-"`, or `"\"` (whichever appears first), or a single-element array when none of those separators is present.
+ */
+export function splitDateString(s: string): string[] {
+    s = s?.trim();
+    if (!s?.length)
+        return null;
+    if (s.indexOf("/") >= 0)
+        return s.split("/");
+    else if (s.indexOf(".") >= 0)
+        return s.split(".");
+    else if (s.indexOf("-") >= 0)
+        return s.split("-");
+    else if (s.indexOf("\\") >= 0)
+        return s.split("\\");
+    else
+        return [s];
+}

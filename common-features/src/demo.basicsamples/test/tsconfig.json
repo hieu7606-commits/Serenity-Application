@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../out/test",
+    "skipLibCheck": true,
+    "typeRoots": null,
+    "types": [
+      "vitest/globals"
+    ]
+  },
+  "include": [
+    "../Modules",
+    "."
+  ]
+}

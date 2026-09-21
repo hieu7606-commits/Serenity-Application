@@ -1,0 +1,35 @@
+{
+  "name": "serene.web",
+  "dependencies": {
+    "@serenity-is/assets": "workspace:*",
+    "@serenity-is/corelib": "workspace:*",
+    "@serenity-is/demo.northwind": "workspace:*",
+    "@serenity-is/domwise": "workspace:*",
+    "@serenity-is/extensions": "workspace:*",
+    "@serenity-is/sleekgrid": "workspace:*",
+    "bootstrap-datepicker": "1.10.1",
+    "chart.js": "catalog:serenity",
+    "daterangepicker": "3.1.0",
+    "dompurify": "catalog:serenity",
+    "flatpickr": "catalog:serenity",
+    "jquery-knob": "1.2.11",
+    "jquery-sparkline": "2.4.0",
+    "jvectormap-content": "0.2.0",
+    "jvectormap-next": "3.2.0",
+    "moment": "catalog:serenity",
+    "preact": "catalog:serenity"
+  },
+  "devDependencies": {
+    "@serenity-is/tsbuild": "workspace:*",
+    "test-utils": "workspace:*"
+  },
+  "scripts": {
+    "build": "node ./tsbuild.js",
+    "pnpm:devPreinstall": "dotnet build -target:RestoreNodeTypes",
+    "preinstall": "dotnet build -target:RestoreNodeTypes",
+    "test": "node ./tsbuild.js && pnpm vitest run",
+    "tsc": "tsc"
+  },
+  "private": true,
+  "type": "module"
+}

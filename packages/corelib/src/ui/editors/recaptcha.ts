@@ -1,0 +1,77 @@
+﻿import { Fluent, FormValidationTexts, addValidationRule, nsSerenity } from "../../base";
+import { IStringValue } from "../../interfaces";
+import { EditorProps, EditorWidget } from "./editorwidget";
+
+/**
+ * Options for the {@link Recaptcha} editor.
+ */
+export interface RecaptchaOptions {
+    /** The reCAPTCHA site key. */
+    siteKey?: string;
+    /** The language code for the reCAPTCHA widget. */
+    language?: string;
+}
+
+/**
+ * An editor that renders a Google reCAPTCHA widget and validates its response.
+ * @typeParam P - Widget props type.
+ */
+export class Recaptcha<P extends RecaptchaOptions = RecaptchaOptions> extends EditorWidget<P> implements IStringValue {
+    static override[Symbol.typeInfo] = this.registerEditor(nsSerenity, [IStringValue]);
+
+    /**
+     * Creates a reCAPTCHA editor.
+     * @param props - Widget props.
+     */
+    constructor(props: EditorProps<P>) {
+        super(props);
+
+        this.domNode.classList.add('g-recaptcha');
+        this.domNode.setAttribute('data-sitekey', this.options.siteKey);
+        if (!!((window as any)['grecaptcha'] == null && !document.querySelector('script#RecaptchaInclude'))) {
+            let src = 'https://www.google.com/recaptcha/api.js';
+            let lng = this.options.language;
+            if (lng == null) {
+                lng = document.documentElement.getAttribute('lang') ?? '';
+            }
+            src += '?hl=' + lng;
+            const script = document.createElement("script");
+            script.setAttribute('id', 'RecaptchaInclude');
+            script.setAttribute('src', src);
+            document.head.append(script);
+        }
+
+        const valInput = document.createElement("input");
+        Fluent(valInput).insertBefore(this.domNode);
+        valInput.setAttribute('id', this.uniqueName + '_validate');
+        valInput.value = 'x';
+
+        valInput.style.visibility = 'hidden';
+        valInput.style.width = '0px';
+        valInput.style.height = '0px';
+        valInput.style.padding = '0px';
+
+        addValidationRule(valInput, e => {
+            if (!this.get_value()) {
+                return FormValidationTexts.Required;
+            }
+            return null;
+        }, this.uniqueName);
+    }
+
+    /**
+     * Returns the reCAPTCHA response token.
+     * @returns The response value.
+     */
+    get_value(): string {
+        return this.domNode.querySelector<HTMLInputElement>('.g-recaptcha-response').value;
+    }
+
+    /**
+     * Sets the reCAPTCHA value; ignored as it is managed by the widget.
+     * @param value - The value to set.
+     */
+    set_value(value: string): void {
+        // ignore
+    }
+}

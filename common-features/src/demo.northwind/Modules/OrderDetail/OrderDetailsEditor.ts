@@ -1,0 +1,77 @@
+import { alertDialog, confirmDialog, EntityDialogTexts, Fluent, toId } from "@serenity-is/corelib";
+import { GridEditorBase } from "@serenity-is/extensions";
+import { OrderDetailColumns, OrderDetailRow, OrderDetailService, ProductRow } from "../ServerTypes/Demo";
+import { nsDemoNorthwind } from "../ServerTypes/Namespaces";
+import { OrderDetailDialog } from "./OrderDetailDialog";
+
+export class OrderDetailsEditor<P = {}> extends GridEditorBase<OrderDetailRow, P> {
+    static override[Symbol.typeInfo] = this.registerEditor(nsDemoNorthwind);
+    
+    protected override getColumnsKey() { return OrderDetailColumns.columnsKey; }
+    protected override getDialogType() { return OrderDetailDialog; }
+    protected override getRowDefinition() { return OrderDetailRow; }
+    protected override getService() { return OrderDetailService.baseUrl; }
+
+    protected override async validateEntity(row: OrderDetailRow, id: any) {
+        row.ProductID = toId(row.ProductID);
+
+        const sameProduct = this.view.getItems().find(x => x.ProductID === row.ProductID);
+        if (sameProduct && this.itemId(sameProduct) !== id) {
+            alertDialog('This product is already in order details!');
+            return false;
+        }
+
+        if (this.connectedMode)
+            return true;
+
+        const lookup = await ProductRow.getLookupAsync();
+        row.ProductName = lookup.itemById[row.ProductID].ProductName;
+        row.LineTotal = (row.Quantity || 0) * (row.UnitPrice || 0) - (row.Discount || 0);
+        return true;
+    }
+
+    protected override getGridCanLoad() {
+        return super.getGridCanLoad() && this.orderId != null;
+    }
+
+    protected override getNewEntity() {
+        return {
+            OrderID: this.orderId
+        };
+    }
+
+    declare private _orderId: number;
+
+    public get orderId() {
+        return this._orderId;
+    }
+
+    public set orderId(value: number) {
+        if (this._orderId !== toId(value)) {
+            this.setEquality(OrderDetailRow.Fields.OrderID, this._orderId = toId(value));
+            this.connectedMode = this._orderId != null;
+            this.refresh();
+        }
+    }
+
+    protected override onClick(e: Event, row: number, cell: number) {
+        super.onClick(e, row, cell);
+
+        if (Fluent.isDefaultPrevented(e))
+            return;
+
+        const action = (e.target as HTMLElement).closest(".inline-action")?.getAttribute("data-action");
+        if (!action)
+            return;
+
+        e.preventDefault();
+        confirmDialog(EntityDialogTexts.DeleteConfirmation, async () => {
+            this.delete({
+                request: {
+                    EntityId: this.itemId(this.itemAt(row))
+                },
+                onSuccess: () => this.connectedMode && this.view.populate()
+            });
+        });
+    }
+}

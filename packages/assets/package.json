@@ -1,0 +1,28 @@
+{
+  "name": "@serenity-is/assets",
+  "exports": {
+    "./*": "./wwwroot/*"
+  },
+  "devDependencies": {
+    "@tiptap/core": "3.30.5",
+    "@tiptap/extension-file-handler": "3.30.5",
+    "@tiptap/extension-image": "3.30.5",
+    "@tiptap/extension-subscript": "3.30.5",
+    "@tiptap/extension-superscript": "3.30.5",
+    "@tiptap/extension-text-align": "3.30.5",
+    "@tiptap/extension-text-style": "3.30.5",
+    "@tiptap/starter-kit": "3.30.5",
+    "bootstrap": "5.3.8",
+    "glightbox": "3.3.1",
+    "jquery": "4.0.0",
+    "jspdf": "4.2.1",
+    "jspdf-autotable": "5.0.8",
+    "mousetrap": "1.6.5",
+    "nprogress": "0.2.0",
+    "sortablejs": "1.15.7"
+  },
+  "scripts": {
+    "build": "node build/build.mjs",
+    "prepublishOnly": "node build/build.mjs"
+  }
+}

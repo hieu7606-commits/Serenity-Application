@@ -1,0 +1,500 @@
+using System.Diagnostics.CodeAnalysis;
+
+namespace Serenity.Services;
+
+/// <summary>
+/// Behavior that handles <see cref="UpdatableExtensionAttribute"/>.
+/// </summary>
+/// <remarks>
+/// Initializes a new instance of the class.
+/// </remarks>
+/// <param name="handlerFactory">Default handler factory</param>
+/// <exception cref="ArgumentNullException"><paramref name="handlerFactory"/> is <c>null</c>.</exception>
+public class UpdatableExtensionBehavior(IDefaultHandlerFactory handlerFactory) : BaseSaveDeleteBehaviorAsync,
+    ISaveBehaviorSync, IDeleteBehaviorSync, IImplicitBehavior
+{
+    private class RelationInfo
+    {
+        public UpdatableExtensionAttribute? Attr;
+        public Func<IRow>? RowFactory;
+        public Field? ThisKeyField;
+        public Field? OtherKeyField;
+        public Field? FilterField;
+        public object? FilterValue;
+        public List<Tuple<Field, Field>>? Mappings;
+        public Field? PresenceField;
+        public object? PresenceValue;
+    }
+
+    private readonly IDefaultHandlerFactory handlerFactory = handlerFactory ?? throw new ArgumentNullException(nameof(handlerFactory));
+    private List<RelationInfo>? infoList;
+
+    /// <inheritdoc/>
+    public bool ActivateFor(IRow row)
+    {
+        var attrs = row.GetType().GetCustomAttributes<UpdatableExtensionAttribute>();
+
+        if (attrs == null || !attrs.Any())
+            return false;
+
+        var sourceByExpression = row.GetFields().ToLookup(x =>
+            BracketLocator.ReplaceBrackets(x.Expression.TrimToEmpty(), BracketRemoverDialect.Instance));
+
+        infoList = [.. attrs.Select(attr =>
+        {
+            var info = new RelationInfo
+            {
+                Attr = attr
+            };
+
+            var rowType = attr.RowType;
+            if (rowType.IsAbstract ||
+                !typeof(IRow).IsAssignableFrom(rowType) ||
+                rowType.IsInterface)
+            {
+                throw new ArgumentException(string.Format(
+                    "Row type '{1}' has an ExtensionRelation attribute " +
+                    "but its specified extension row type '{0}' is not a valid row class!",
+                        rowType.FullName,
+                        row.GetType().FullName));
+            }
+
+            info.RowFactory = () => (IRow)Activator.CreateInstance(rowType)!;
+
+            var thisKey = attr.ThisKey;
+            if (string.IsNullOrEmpty(thisKey))
+            {
+                if (row is not IIdRow)
+                {
+                    throw new ArgumentException(string.Format(
+                        "Row type '{0}' has an ExtensionRelation attribute " +
+                        "but its ThisKey is not specified!",
+                            row.GetType().FullName));
+                }
+
+                info.ThisKeyField = row.GetIdField();
+            }
+            else
+            {
+                info.ThisKeyField = (row.FindFieldByPropertyName(attr.ThisKey!) ??
+                    row.FindField(attr.ThisKey!)) ?? throw new ArgumentException(string.Format("Field '{0}' doesn't exist in row of type '{1}'." +
+                        "This field is specified for an ExtensionRelation attribute",
+                        attr.ThisKey,
+                        row.GetType().FullName));
+            }
+
+            var ext = info.RowFactory();
+
+            var otherKey = attr.OtherKey;
+            if (string.IsNullOrEmpty(otherKey))
+            {
+                info.OtherKeyField = ext.FindField(info.ThisKeyField!.Name);
+
+                if (info.OtherKeyField is null && ext is IIdRow)
+                    info.OtherKeyField = row.GetIdField();
+
+                if (info.OtherKeyField is null)
+                    throw new ArgumentException(string.Format(
+                        "Row type '{0}' has an ExtensionRelation attribute " +
+                        "but its OtherKey is not specified!",
+                            row.GetType().FullName));
+            }
+            else
+            {
+                info.OtherKeyField = (ext.FindFieldByPropertyName(attr.OtherKey!) ?? ext.FindField(attr.OtherKey!)) ?? throw new ArgumentException(string.Format("Field '{0}' doesn't exist in row of type '{1}'." +
+                        "This field is specified for an ExtensionRelation attribute on '{2}'",
+                        attr.OtherKey,
+                        ext.GetType().FullName,
+                        row.GetType().FullName)); }
+
+            if (!string.IsNullOrEmpty(attr.FilterField))
+            {
+                info.FilterField = (ext.FindFieldByPropertyName(attr.FilterField) ?? ext.FindField(attr.FilterField)) ?? throw new ArgumentException(string.Format("Field '{0}' doesn't exist in row of type '{1}'." +
+                        "This field is specified as FilterField for an ExtensionRelation attribute on '{2}'",
+                        attr.OtherKey,
+                        ext.GetType().FullName,
+                        row.GetType().FullName)); info.FilterValue = info.FilterField.ConvertValue(attr.FilterValue, CultureInfo.InvariantCulture);
+            }
+
+            if (!string.IsNullOrEmpty(attr.PresenceField))
+            {
+                info.PresenceField = (row.FindFieldByPropertyName(attr.PresenceField) ?? row.FindField(attr.PresenceField)) ?? throw new ArgumentException(string.Format("Field '{0}' doesn't exist in row of type '{1}'." +
+                        "This field is specified as PresenceField as an ExtensionRelation attribute.",
+                        attr.PresenceField,
+                        row.GetType().FullName)); info.PresenceValue = attr.PresenceValue;
+            }
+
+            var extFields = ext.GetFields();
+            var alias = attr.Alias;
+            var aliasPrefix = attr.Alias + "_";
+
+            var joinByKey = new HashSet<string>(extFields.Joins.Keys, StringComparer.OrdinalIgnoreCase);
+
+            string mapAlias(string x)
+            {
+                if (x == "t0" || x == "T0")
+                    return alias;
+
+                if (!joinByKey.Contains(x))
+                    return x;
+
+                return aliasPrefix + x;
+            }
+
+            [return:NotNullIfNotNull(nameof(x))]
+            string? mapExpression(string? x)
+            {
+                if (x == null)
+                    return null;
+
+                return JoinAliasLocator.ReplaceAliases(x, mapAlias);
+            }
+
+            info.Mappings = [];
+            foreach (var field in extFields)
+            {
+                if (ReferenceEquals(info.OtherKeyField, field))
+                    continue;
+
+                if (ReferenceEquals(info.FilterField, field))
+                    continue;
+
+                var expression = field.Expression.TrimToEmpty();
+
+                if (string.IsNullOrEmpty(expression))
+                    continue;
+
+                expression = mapExpression(expression);
+                expression = BracketLocator.ReplaceBrackets(expression, 
+                    BracketRemoverDialect.Instance);
+
+                var match = sourceByExpression[expression].FirstOrDefault();
+                if (match is null)
+                    continue;
+
+                if (match.IsTableField())
+                    continue;
+
+                if (ReferenceEquals(info.ThisKeyField, match))
+                    continue;
+
+                if (field.GetType() != match.GetType())
+                    throw new ArgumentException(string.Format(
+                        "Row type '{0}' has an ExtensionRelation attribute to '{1}'." +
+                        "Their '{2}' and '{3}' fields are matched but they have different types ({4} and {5})!",
+                            row.GetType().FullName,
+                            ext.GetType().FullName,
+                            field.PropertyName ?? field.Name,
+                            match.PropertyName ?? match.Name,
+                            field.GetType().Name,
+                            match.GetType().Name));
+
+                info.Mappings.Add(new Tuple<Field, Field>(match, field));
+            }
+
+            if (info.Mappings.Count == 0)
+                throw new ArgumentException(string.Format(
+                    "Row type '{0}' has an ExtensionRelation attribute " +
+                    "but no view fields could be matched to extension row '{1}'!",
+                        row.GetType().FullName,
+                        ext.GetType().FullName));
+
+            return info;
+        })];
+
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public virtual void OnBeforeSave(ISaveRequestHandler handler)
+    {
+        foreach (var info in infoList!)
+        {
+            var mappings = info.Mappings!.Where(x => handler.Row.IsAssigned(x.Item1)).ToList();
+
+            if (mappings.Count == 0)
+                continue;
+
+            handler.StateBag["UpdatableExtensionBehavior_Assignments_" + info.Attr!.Alias] = mappings;
+
+            HandleSave(handler, info, beforeSave: true);
+        }
+    }
+
+    /// <inheritdoc/>
+    public override async Task OnBeforeSaveAsync(ISaveRequestHandler handler, CancellationToken cancellationToken = default)
+    {
+        foreach (var info in infoList!)
+        {
+            var mappings = info.Mappings!.Where(x => handler.Row.IsAssigned(x.Item1)).ToList();
+
+            if (mappings.Count == 0)
+                continue;
+
+            handler.StateBag["UpdatableExtensionBehavior_Assignments_" + info.Attr!.Alias] = mappings;
+
+            await HandleSaveAsync(handler, info, beforeSave: true, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private object? GetExistingID(IDbConnection connection, RelationInfo info,
+        object thisKey)
+    {
+        var listHandler = handlerFactory.CreateHandler<IListRequestProcessor>(info.Attr!.RowType);
+        var listRequest = listHandler.CreateRequest();
+        ApplyFilter(listRequest, info, thisKey);
+
+        var existing = listHandler.Process(connection, listRequest).Entities!;
+        return GetExistingID(existing, info);
+    }
+
+    private async Task<object?> GetExistingIDAsync(IDbConnection connection, RelationInfo info,
+        object thisKey, CancellationToken cancellationToken)
+    {
+        var listHandler = handlerFactory.CreateHandler<IListRequestProcessorAsync>(info.Attr!.RowType);
+        var listRequest = listHandler.CreateRequest();
+        ApplyFilter(listRequest, info, thisKey);
+
+        var existing = (await listHandler.ProcessAsync(connection, listRequest, cancellationToken).ConfigureAwait(false)).Entities!;
+        return GetExistingID(existing, info);
+    }
+
+    private static void ApplyFilter(ListRequest listRequest, RelationInfo info, object? thisKey)
+    {
+        var criteria = new Criteria(info.OtherKeyField!.PropertyName ?? info.OtherKeyField.Name) ==
+            new ValueCriteria(thisKey);
+
+        if (info.FilterField is not null)
+        {
+            var flt = new Criteria(info.FilterField.PropertyName ?? info.FilterField.Name);
+            if (info.FilterValue == null)
+                criteria &= flt.IsNull();
+            else
+                criteria &= flt == new ValueCriteria(info.FilterValue);
+        }
+
+        listRequest.ColumnSelection = ColumnSelection.KeyOnly;
+        listRequest.Criteria = criteria;
+    }
+
+    private static object? GetExistingID(System.Collections.IList existing, RelationInfo info)
+    {
+        if (existing.Count > 1)
+            throw new Exception(string.Format("Found multiple extension rows for UpdatableExtension '{0}'", 
+                info.Attr!.Alias));
+
+        if (existing.Count == 0)
+            return null;
+
+        return ((IRow)existing[0]!).GetIdField().AsObject((IRow)existing[0]!);
+    }
+
+    private static bool CheckPresenceValue(RelationInfo info, IRow row)
+    {
+        if (info.PresenceField is not null)
+        {
+            if (info.PresenceField is not BooleanField &&
+                info.PresenceValue is bool b)
+            {
+                if (info.PresenceField.IsNull(row) == b)
+                    return false;
+            }
+            else
+            {
+                var newRow = row.CreateNew();
+                info.PresenceField.AsInvariant(newRow, info.PresenceValue);
+                if (info.PresenceField.IndexCompare(row, newRow) != 0)
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void HandleSave(ISaveRequestHandler handler, RelationInfo info, bool beforeSave)
+    {
+        if (beforeSave && ReferenceEquals(info.ThisKeyField, handler.Row.IdField))
+        {
+            // need to handle this after save, as we need the main row's identity
+            // even if the main row has no auto increment identity, if the extension row
+            // has a fk to the main row, we still need to wait
+            return;
+        }
+
+        string stateKey = "UpdatableExtensionBehavior_Assignments_" + info.Attr!.Alias;
+        if (!handler.StateBag.TryGetValue(stateKey, out object? mappingsObj))
+            return;
+
+        var mappings = (IEnumerable<Tuple<Field, Field>>?)mappingsObj;
+        if (mappings == null || !mappings.Any())
+            return;
+
+        var thisKey = info.ThisKeyField!.AsObject(handler.Row);
+        if (!beforeSave && thisKey is null)
+            return;
+
+        object? oldID = thisKey == null ? null : GetExistingID(handler.Connection!, info, thisKey);
+        if (oldID == null && !CheckPresenceValue(info, handler.Row))
+        {
+            // don't check presence again in after save
+            handler.StateBag.Remove(stateKey);
+            return;
+        }
+
+        var extension = info.RowFactory!();
+
+        if (oldID != null)
+            ((IIdRow)extension).GetIdField().AsInvariant(extension, oldID);
+
+        info.OtherKeyField!.AsInvariant(extension, thisKey);
+        info.FilterField?.AsInvariant(extension, info.FilterValue);
+
+        var saveHandler = handlerFactory.CreateHandler<ISaveRequestProcessor>(info.Attr.RowType);
+        var request = saveHandler.CreateRequest();
+        request.Entity = extension;
+        request.EntityId = oldID;
+
+        foreach (var mapping in mappings)
+            mapping.Item2.AsInvariant(extension, mapping.Item1.AsObject(handler.Row));
+
+        var response = saveHandler.Process(handler.UnitOfWork,
+            request, oldID == null ? SaveRequestType.Create : SaveRequestType.Update);
+
+        FinishSave(handler, info, beforeSave, stateKey, thisKey, oldID, response);
+    }
+
+    private async Task HandleSaveAsync(ISaveRequestHandler handler, RelationInfo info, bool beforeSave,
+        CancellationToken cancellationToken)
+    {
+        if (beforeSave && ReferenceEquals(info.ThisKeyField, handler.Row.IdField))
+        {
+            // need to handle this after save, as we need the main row's identity
+            // even if the main row has no auto increment identity, if the extension row
+            // has a fk to the main row, we still need to wait
+            return;
+        }
+
+        string stateKey = "UpdatableExtensionBehavior_Assignments_" + info.Attr!.Alias;
+        if (!handler.StateBag.TryGetValue(stateKey, out object? mappingsObj))
+            return;
+
+        var mappings = (IEnumerable<Tuple<Field, Field>>?)mappingsObj;
+        if (mappings == null || !mappings.Any())
+            return;
+
+        var thisKey = info.ThisKeyField!.AsObject(handler.Row);
+        if (!beforeSave && thisKey is null)
+            return;
+
+        object? oldID = thisKey == null ? null : await GetExistingIDAsync(handler.Connection!, info, thisKey, cancellationToken).ConfigureAwait(false);
+        if (oldID == null && !CheckPresenceValue(info, handler.Row))
+        {
+            // don't check presence again in after save
+            handler.StateBag.Remove(stateKey);
+            return;
+        }
+
+        var extension = info.RowFactory!();
+
+        if (oldID != null)
+            ((IIdRow)extension).GetIdField().AsInvariant(extension, oldID);
+
+        info.OtherKeyField!.AsInvariant(extension, thisKey);
+        info.FilterField?.AsInvariant(extension, info.FilterValue);
+
+        var saveHandler = handlerFactory.CreateHandler<ISaveRequestProcessorAsync>(info.Attr.RowType);
+        var request = saveHandler.CreateRequest();
+        request.Entity = extension;
+        request.EntityId = oldID;
+
+        foreach (var mapping in mappings)
+            mapping.Item2.AsInvariant(extension, mapping.Item1.AsObject(handler.Row));
+
+        var response = await saveHandler.ProcessAsync(handler.UnitOfWork,
+            request, oldID == null ? SaveRequestType.Create : SaveRequestType.Update, cancellationToken).ConfigureAwait(false);
+
+        FinishSave(handler, info, beforeSave, stateKey, thisKey, oldID, response);
+    }
+
+    private static void FinishSave(ISaveRequestHandler handler, RelationInfo info, bool beforeSave,
+        string stateKey, object? thisKey, object? oldID, SaveResponse response)
+    {
+        if (oldID == null &&
+            thisKey == null &&
+            response.EntityId != null &&
+            !ReferenceEquals(info.ThisKeyField, handler.Row.IdField))
+        {
+            info.ThisKeyField!.AsInvariant(handler.Row, response.EntityId);
+        }
+
+        if (beforeSave)
+        {
+            // don't try again in after save
+            handler.StateBag.Remove(stateKey);
+        }
+    }
+
+    /// <inheritdoc/>
+    public virtual void OnAfterSave(ISaveRequestHandler handler)
+    {
+        foreach (var info in infoList!)
+        {
+            HandleSave(handler, info, beforeSave: false);
+        }
+    }
+
+    /// <inheritdoc/>
+    public override async Task OnAfterSaveAsync(ISaveRequestHandler handler, CancellationToken cancellationToken = default)
+    {
+        foreach (var info in infoList!)
+        {
+            await HandleSaveAsync(handler, info, beforeSave: false, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc/>
+    public virtual void OnBeforeDelete(IDeleteRequestHandler handler)
+    {
+        foreach (var info in infoList!)
+        {
+            if (!info.Attr!.CascadeDelete)
+                continue;
+
+            var thisKey = info.ThisKeyField!.AsObject(handler.Row);
+            if (thisKey is null)
+                continue;
+
+            var oldID = GetExistingID(handler.Connection, info, thisKey);
+            if (oldID == null)
+                continue;
+
+            var deleteHandler = handlerFactory.CreateHandler<IDeleteRequestProcessor>(info.Attr.RowType);
+            var deleteRequest = deleteHandler.CreateRequest();
+            deleteRequest.EntityId = oldID;
+            deleteHandler.Process(handler.UnitOfWork, deleteRequest);
+        }
+    }
+
+    /// <inheritdoc/>
+    public override async Task OnBeforeDeleteAsync(IDeleteRequestHandler handler, CancellationToken cancellationToken = default)
+    {
+        foreach (var info in infoList!)
+        {
+            if (!info.Attr!.CascadeDelete)
+                continue;
+
+            var thisKey = info.ThisKeyField!.AsObject(handler.Row);
+            if (thisKey is null)
+                continue;
+
+            var oldID = await GetExistingIDAsync(handler.Connection, info, thisKey, cancellationToken).ConfigureAwait(false);
+            if (oldID == null)
+                continue;
+
+            var deleteHandler = handlerFactory.CreateHandler<IDeleteRequestProcessorAsync>(info.Attr.RowType);
+            var deleteRequest = deleteHandler.CreateRequest();
+            deleteRequest.EntityId = oldID;
+            await deleteHandler.ProcessAsync(handler.UnitOfWork, deleteRequest, cancellationToken).ConfigureAwait(false);
+        }
+    }
+}

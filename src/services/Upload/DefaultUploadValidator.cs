@@ -1,0 +1,183 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.IO;
+
+namespace Serenity.Web;
+
+/// <summary>
+/// Default implementation for <see cref="IUploadValidator"/>.
+/// </summary>
+/// <remarks>
+/// Initializes a new instance of the class.
+/// </remarks>
+/// <param name="imageProcessor">Image processor</param>
+/// <param name="localizer">Text localizer</param>
+/// <param name="uploadSettings">Upload settings</param>
+/// <param name="logger">Exception logger</param>
+/// <exception cref="ArgumentNullException"><paramref name="imageProcessor"/> or <paramref name="localizer"/> is <c>null</c>.</exception>
+public class DefaultUploadValidator(IImageProcessor imageProcessor, ITextLocalizer localizer,
+    ILogger<DefaultUploadValidator>? logger = null,
+    IOptions<UploadSettings>? uploadSettings = null) : IUploadValidator
+{
+    private readonly IImageProcessor imageProcessor = imageProcessor ?? throw new ArgumentNullException(nameof(imageProcessor));
+    private readonly ITextLocalizer localizer = localizer ?? throw new ArgumentNullException(nameof(localizer));
+    private readonly IOptions<UploadSettings> uploadSettings = uploadSettings ?? new UploadSettings();
+    private readonly ILogger<DefaultUploadValidator>? logger = logger;
+
+    /// <inheritdoc/>
+    public void ValidateFile(IUploadFileConstraints constraints, 
+        Stream stream, string filename, out bool isImageExtension)
+    {
+        ArgumentNullException.ThrowIfNull(constraints);
+
+        ArgumentNullException.ThrowIfNull(stream);
+
+        ArgumentNullException.ThrowIfNull(filename);
+
+        isImageExtension = false;
+        var fileExtension = Path.GetExtension(filename);
+
+        var settings = uploadSettings.Value;
+
+        if ((!IsExtensionIn(settings.ExtensionBlacklistExclude, fileExtension) &&
+             IsExtensionIn(settings.ExtensionBlacklist, fileExtension)) ||
+            IsExtensionIn(settings.ExtensionBlacklistInclude, fileExtension))
+        {
+            throw new ValidationError("ExtensionInBlacklist", 
+                string.Format(CultureInfo.CurrentCulture,
+                FileUploadTexts.ExtensionBlacklisted.ToString(localizer),
+                fileExtension));
+        }
+
+        if ((!string.IsNullOrEmpty(settings.ExtensionWhitelist) ||
+             !string.IsNullOrEmpty(settings.ExtensionWhitelistInclude)) &&
+            (IsExtensionIn(settings.ExtensionWhitelistExclude, fileExtension) || 
+             !IsExtensionIn(settings.ExtensionWhitelist, fileExtension)) &&
+            !IsExtensionIn(settings.ExtensionWhitelistInclude, fileExtension))
+            throw new ValidationError("ExtensionNotInWhitelist", string.Format(CultureInfo.CurrentCulture,
+                FileUploadTexts.ExtensionBlacklisted.ToString(localizer),
+                fileExtension));
+
+        var size = stream.Length;
+        if (constraints.MinSize != 0 && size < constraints.MinSize)
+            throw new ValidationError(string.Format(CultureInfo.CurrentCulture,
+                FileUploadTexts.UploadFileTooSmall.ToString(localizer),
+                UploadFormatting.FileSizeDisplay(constraints.MinSize)));
+
+        if (constraints.MaxSize != 0 && size > constraints.MaxSize)
+            throw new ValidationError(string.Format(CultureInfo.CurrentCulture,
+                FileUploadTexts.UploadFileTooBig.ToString(localizer),
+                UploadFormatting.FileSizeDisplay(constraints.MaxSize)));
+
+        var allowedExtensions = constraints.AllowedExtensions;
+        if (!string.IsNullOrEmpty(allowedExtensions) &&
+            !IsExtensionIn(allowedExtensions, fileExtension))
+        {
+            throw new ValidationError(string.Format(CultureInfo.CurrentCulture,
+                FileUploadTexts.ExtensionNotAllowed.ToString(localizer),
+                fileExtension, constraints.AllowedExtensions));
+        }
+
+        var imageExtensions = constraints.ImageExtensions ?? UploadOptions.DefaultImageExtensions;
+        if (string.IsNullOrEmpty(imageExtensions) ||
+            !imageExtensions.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim())
+                .Any(x => string.Equals(x, fileExtension, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (constraints.AllowNonImage == true)
+                return;
+
+            if (string.IsNullOrEmpty(imageExtensions))
+                throw new ValidationError(
+                    FileUploadTexts.NotAnImageFile.ToString(localizer));
+
+            throw new ValidationError(string.Format(CultureInfo.CurrentCulture,
+                FileUploadTexts.NotAnImageWithExtensions.ToString(localizer),
+                fileExtension, constraints.ImageExtensions));
+        }
+
+        isImageExtension = true;
+    }
+
+    private static readonly char[] extSep = [',', ';'];
+
+    private static bool IsExtensionIn(string? extensionList, string extension)
+    {
+        if (string.IsNullOrEmpty(extensionList))
+            return false;
+
+        extension = extension.Trim();
+
+        foreach (var x in extensionList.Split(extSep, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string ext = x.Trim();
+            if (ext == "." && string.IsNullOrEmpty(extension))
+                return true;
+
+            if (string.Equals(ext, extension, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <inheritdoc/>
+    public void ValidateImage(IUploadImageConstraints constraints, Stream stream, 
+        string filename, out object? image)
+    {
+        ArgumentNullException.ThrowIfNull(constraints);
+
+        ArgumentNullException.ThrowIfNull(stream);
+
+        ArgumentNullException.ThrowIfNull(filename);
+
+        var fileExtension = Path.GetExtension(filename);
+
+        image = null;
+        try
+        {
+            var checker = new ImageChecker
+            {
+                MinWidth = constraints.MinWidth,
+                MaxWidth = constraints.MaxWidth,
+                MinHeight = constraints.MinHeight,
+                MaxHeight = constraints.MaxHeight
+            };
+
+            ImageCheckResult result = checker.CheckStream(stream, imageProcessor, returnImage: true, 
+                out var imageObj, out var formatInfo, logger);
+
+            image = imageObj;
+
+            if (result != ImageCheckResult.Valid)
+            {
+                if (constraints?.IgnoreInvalidImage == true &&
+                    result == ImageCheckResult.InvalidImage)
+                    return;
+
+                if (constraints?.IgnoreEmptyImage == true &&
+                    result == ImageCheckResult.ImageIsEmpty)
+                    return;
+
+                var error = checker.FormatErrorMessage(result, localizer);
+                throw new ValidationError(error);
+            }
+
+            if (constraints.IgnoreExtensionMismatch != true &&
+                !formatInfo!.FileExtensions!.Any(x => string.Equals(x, fileExtension,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new ValidationError(string.Format(CultureInfo.CurrentCulture,
+                    FileUploadTexts.ImageExtensionMismatch.ToString(localizer),
+                    fileExtension, formatInfo.MimeType));
+            }
+        }
+        catch
+        {
+            (image as IDisposable)?.Dispose();
+            throw;
+        }
+
+    }
+
+}

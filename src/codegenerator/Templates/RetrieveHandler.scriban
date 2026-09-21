@@ -1,0 +1,22 @@
+{{USING "Serenity.Services"}}
+{{USING "MyRow = " + RowFullName}}
+
+{{NAMESPACE HandlerNamespace}}{{capture block~}}
+{{~if EnableGenerateInterface~}}
+[GenerateInterface]
+{{~else~}}
+public interface I{{ClassName}}RetrieveHandler : IRetrieveHandlerAsync<MyRow, RetrieveRequest, RetrieveResponse<MyRow>> { }
+
+{{~end~}}
+public class {{ClassName}}RetrieveHandler{{~if NET8Plus~}}(IRequestContext context){{~end}} :
+    RetrieveRequestHandlerAsync<MyRow, RetrieveRequest, RetrieveResponse<MyRow>>{{~if NET8Plus~}}(context){{~end~}},
+    I{{ClassName}}RetrieveHandler
+{
+{{~if !NET8Plus~}}
+    public {{ClassName}}RetrieveHandler(IRequestContext context)
+            : base(context)
+    {
+    }
+{{~end~}}
+}
+{{~end}}{{NAMESPACEBLOCK block~}}

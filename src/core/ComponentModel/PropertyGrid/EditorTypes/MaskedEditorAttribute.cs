@@ -1,0 +1,48 @@
+namespace Serenity.ComponentModel;
+
+/// <summary>
+/// Indicates that the target property should use a "Masked" editor.
+/// Note that this requires https://www.npmjs.com/package/jquery.maskedinput,
+/// e.g. jquery.maskedinput.js which can be installed via libman or npm,
+/// and referenced in your scripts (via appsettings.bundles.json).
+/// </summary>
+/// <seealso cref="CustomEditorAttribute" />
+public partial class MaskedEditorAttribute : CustomEditorAttribute
+{
+    /// <summary>
+    /// Editor type key
+    /// </summary>
+    public const string Key = "Masked";
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MaskedEditorAttribute"/> class.
+    /// </summary>
+    public MaskedEditorAttribute()
+        : base(Key)
+    {
+    }
+
+    /// <summary>
+    /// Gets or sets the mask. a = letter, 9 = numeric, * = alphanumeric.
+    /// </summary>
+    /// <value>
+    /// The mask.
+    /// </value>
+    public string? Mask
+    {
+        get { return GetOption<string>("mask"); }
+        set { SetOption("mask", value); }
+    }
+
+    /// <summary>
+    /// Gets or sets the placeholder.
+    /// </summary>
+    /// <value>
+    /// The placeholder.
+    /// </value>
+    public string? Placeholder
+    {
+        get { return GetOption<string>("placeholder"); }
+        set { SetOption("placeholder", value); }
+    }
+}

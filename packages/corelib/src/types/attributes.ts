@@ -1,0 +1,147 @@
+import { CustomAttribute, classTypeInfo, nsSerenity, registerType } from "../base";
+
+/**
+ * Indicates whether a dialog should show a close button in its title bar.
+ * Applied via `static [Symbol.typeInfo]` metadata or the legacy decorator.
+ */
+export class CloseButtonAttribute extends CustomAttribute {
+    static override[Symbol.typeInfo] = classTypeInfo(nsSerenity); static { registerType(this); }
+
+    /**
+     * Creates a new {@link CloseButtonAttribute}.
+     * @param value - Whether the title bar should display a close button. Defaults to `true`.
+     */
+    constructor(public value = true) {
+        super();
+    }
+}
+
+/**
+ * Specifies the root element tag for a widget (e.g. `"div"`, `"span"`).
+ * Used by the widget factory to create the default DOM element.
+ */
+export class ElementAttribute extends CustomAttribute {
+    static override[Symbol.typeInfo] = classTypeInfo(nsSerenity); static { registerType(this); }
+
+    /**
+     * Creates a new {@link ElementAttribute}.
+     * @param value - Tag name for the widget's root element (e.g. `"div"`).
+     */
+    constructor(public value: string) {
+        super();
+    }
+}
+
+/**
+ * Indicates whether a grid should expose the advanced filter editor.
+ * When disabled the filter panel and advanced filter dialog are hidden.
+ */
+export class AdvancedFilteringAttribute extends CustomAttribute {
+    static override[Symbol.typeInfo] = classTypeInfo(nsSerenity); static { registerType(this); }
+
+    /**
+     * Creates a new {@link AdvancedFilteringAttribute}.
+     * @param value - Whether advanced filtering should be enabled. Defaults to `true`.
+     */
+    constructor(public value = true) {
+        super();
+    }
+}
+
+
+/**
+ * Indicates that a dialog should be maximizable.
+ * @remarks Requires jQuery UI and `jquery.dialogextend.js`; not applicable to Bootstrap modals.
+ */
+export class MaximizableAttribute extends CustomAttribute {
+    static override[Symbol.typeInfo] = classTypeInfo(nsSerenity); static { registerType(this); }
+
+    /**
+     * Creates a new {@link MaximizableAttribute}.
+     * @param value - Whether the dialog may be maximized. Defaults to `true`.
+     */
+    constructor(public value = true) {
+        super();
+    }
+}
+
+/**
+ * Indicates that the property is an option. This is no longer used as JSX
+ * does not support it, but it is kept for backward compatibility.
+ */
+export class OptionAttribute extends CustomAttribute {
+    static override[Symbol.typeInfo] = classTypeInfo(nsSerenity); static { registerType(this); }
+}
+
+/**
+ * Indicates that a dialog should open as a side panel by default.
+ * Panels are rendered docked to the side rather than as centered modals.
+ */
+export class PanelAttribute extends CustomAttribute {
+    static override[Symbol.typeInfo] = classTypeInfo(nsSerenity); static { registerType(this); }
+
+    /**
+     * Creates a new {@link PanelAttribute}.
+     * @param value - Whether the dialog should prefer panel mode. Defaults to `true`.
+     */
+    constructor(public value = true) {
+        super();
+    }
+}
+
+/**
+ * Indicates whether a dialog should be resizable (jQuery UI dialogs only).
+ * Has no effect on Bootstrap modal dialogs.
+ */
+export class ResizableAttribute extends CustomAttribute {
+    static override[Symbol.typeInfo] = classTypeInfo(nsSerenity); static { registerType(this); }
+
+    /**
+     * Creates a new {@link ResizableAttribute}.
+     * @param value - Whether the dialog may be resized by the user. Defaults to `true`.
+     */
+    constructor(public value = true) {
+        super();
+    }
+}
+
+/**
+ * Indicates that the widget should render as a static panel (plain div embedded
+ * in the page without title bar / modal behavior).
+ * Useful for embedding widgets directly in page layout.
+ */
+export class StaticPanelAttribute extends CustomAttribute {
+    static override[Symbol.typeInfo] = classTypeInfo(nsSerenity); static { registerType(this); }
+
+    /**
+     * Creates a new {@link StaticPanelAttribute}.
+     * @param value - Whether the widget should render as a static panel. Defaults to `true`.
+     */
+    constructor(public value = true) {
+        super();
+    }
+}
+
+/**
+ * Factory helpers for common widget attributes. Each method creates an attribute instance
+ * and is flagged with `isAttributeFactory` for reflection discovery.
+ */
+export namespace Attributes {
+    /** Creates an {@link AdvancedFilteringAttribute}. @param value - True to enable (default `true`). */
+    export function advancedFiltering(value = true) { return new AdvancedFilteringAttribute(value); }
+    /** Creates a {@link CloseButtonAttribute}. @param value - True to show close button (default `true`). */
+    export function closeButton(value = true) { return new CloseButtonAttribute(value); }
+    /** Creates a {@link ResizableAttribute}. @param value - True to allow resizing (default `true`). */
+    export function resizable(value = true) { return new ResizableAttribute(value); }
+    /** Creates a {@link MaximizableAttribute}. @param value - True to allow maximizing (default `true`). */
+    export function maximizable(value = true) { return new MaximizableAttribute(value); }
+    /** Creates a {@link PanelAttribute}. @param value - True to prefer panel mode (default `true`). */
+    export function panel(value = true) { return new PanelAttribute(value); }
+    /** Creates a {@link StaticPanelAttribute}. @param value - True for static panel (default `true`). */
+    export function staticPanel(value = true) { return new StaticPanelAttribute(value); }
+
+    Object.keys(Attributes).forEach(key => (Attributes as any)[key].isAttributeFactory = true);
+}
+
+/** [DEPRECATED] Use Attributes.advancedFiltering() instead */
+export const FilterableAttribute = AdvancedFilteringAttribute;

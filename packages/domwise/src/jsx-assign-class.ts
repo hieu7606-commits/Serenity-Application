@@ -1,0 +1,112 @@
+import type { JSXElement } from "../types";
+import { className } from "./class-name";
+import { isSignalLike, observeSignal } from "./signal-util";
+import { disposeScopedSubscriptions, getScopedOwner } from "./subscription-owner";
+import { isArrayLike, isObject } from "./util";
+
+function isIterable(value: any): boolean {
+    return isObject(value) && typeof value[Symbol.iterator] === "function";
+}
+
+function unsignalizePrevClass(prev: any): any {
+    if (prev == null)
+        return prev;
+
+    if (isArrayLike(prev) || isIterable(prev)) {
+        prev = Array.from(prev).map(item => {
+            if (isSignalLike(item))
+                return item.peek();
+            if (isArrayLike(item) || isIterable(item))
+                return unsignalizePrevClass(item);
+            return item;
+        });
+    }
+    else if (isObject(prev)) {
+        prev = { ...prev };
+        Object.entries(prev).forEach(([key, val]) => {
+            if (isSignalLike(val))
+                prev[key] = val.peek();
+        });
+    }
+
+    return prev;
+}
+
+function clearPrevClass(node: JSXElement, prev?: any): void {
+    if (prev == null || prev === false || prev === true)
+        return;
+
+    prev = unsignalizePrevClass(prev);
+
+    const prevClassNames = (className(prev) ?? "").split(/[\t\n\f\r ]+/);
+    for (let cls of prevClassNames) {
+        if (cls) {
+            node.classList.remove(cls);
+        }
+    }
+}
+
+export function assignClass(node: JSXElement, value?: any, prev?: any): void {
+    // drop per-key signal bindings from a previously assigned class
+    disposeScopedSubscriptions(node, "class");
+
+    if (value == null || value === false) {
+        clearPrevClass(node, prev);
+        return;
+    }
+
+    prev = unsignalizePrevClass(prev);
+
+    let owner: EventTarget | undefined;
+
+    if (isArrayLike(value) || isIterable(value)) {
+        value = Array.from(value).map(x => {
+            let val = x;
+            if (isSignalLike(x)) {
+                observeSignal(x, args => {
+                    if (args.isInitial) {
+                        val = args.newValue;
+                        return;
+                    }
+                    applyClassName(node, args.newValue, args.prevValue);
+                }, {
+                    lifecycleNode: owner ??= getScopedOwner(node, "class")
+                });
+            }
+            return val;
+        });
+    }
+    else if (isObject(value)) {
+        value = { ...value };
+        Object.entries(value).forEach(([key, val]) => {
+            if (isSignalLike(val)) {
+                observeSignal(val, args => {
+                    if (args.isInitial) {
+                        value[key] = args.newValue;
+                        return;
+                    }
+                    applyClassName(node, Boolean(args.newValue) && key, Boolean(args.prevValue) && key)
+                }, {
+                    lifecycleNode: owner ??= getScopedOwner(node, "class")
+                });
+            }
+        });
+    }
+
+    applyClassName(node, value, prev);
+}
+
+function applyClassName(node: JSXElement, value: any, prev?: any): void {
+    const newList = (className(value) ?? "").split(/[\t\n\f\r ]+/);
+    if (prev) {
+        const prevList = (className(prev) ?? "").split(/[\t\n\f\r ]+/);
+        for (let cls of prevList) {
+            if (cls && !newList.includes(cls)) {
+                node.classList.remove(cls);
+            }
+        }
+    }
+    for (let cls of newList) {
+        cls && node.classList.add(cls);
+    }
+}

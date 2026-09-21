@@ -1,0 +1,40 @@
+﻿{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "importHelpers": false,
+    "inlineSources": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "@serenity-is/domwise",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "newLine": "lf",
+    "noImplicitAny": true,
+    "noImplicitOverride": true,
+    "outDir": "../out",
+    "skipLibCheck": true,
+    "strict": false,
+    "stripInternal": true,
+    "sourceMap": true,
+    "target": "ES2022",
+    "types": [],
+    "useDefineForClassFields": false
+  },
+  "include": [
+    "**/*"
+  ],
+  "exclude": [
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "test/**/*"
+  ]
+}

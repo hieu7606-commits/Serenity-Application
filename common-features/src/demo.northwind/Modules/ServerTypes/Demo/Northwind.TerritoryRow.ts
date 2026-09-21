@@ -1,0 +1,26 @@
+﻿import { fieldsProxy, getLookup, getLookupAsync } from "@serenity-is/corelib";
+
+export interface TerritoryRow {
+    TerritoryID?: string;
+    TerritoryDescription?: string;
+    RegionID?: number;
+    RegionDescription?: string;
+}
+
+export abstract class TerritoryRow {
+    static readonly idProperty = 'TerritoryID';
+    static readonly nameProperty = 'TerritoryID';
+    static readonly localTextPrefix = 'Northwind.Territory';
+    static readonly lookupKey = 'Northwind.Territory';
+
+    /** [DEPRECATED] use getLookupAsync instead */
+    static getLookup() { return getLookup<TerritoryRow>('Northwind.Territory') }
+    static async getLookupAsync() { return getLookupAsync<TerritoryRow>('Northwind.Territory') }
+
+    static readonly deletePermission = 'Northwind:General';
+    static readonly insertPermission = 'Northwind:General';
+    static readonly readPermission = 'Northwind:General';
+    static readonly updatePermission = 'Northwind:General';
+
+    static readonly Fields = fieldsProxy<TerritoryRow>();
+}

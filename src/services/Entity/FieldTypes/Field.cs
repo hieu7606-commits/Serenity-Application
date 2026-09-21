@@ -1,0 +1,698 @@
+using System.Text.Json;
+
+namespace Serenity.Data;
+
+/// <summary>
+/// Base Field class.
+/// </summary>
+/// <seealso cref="IFieldWithJoinInfo" />
+public abstract partial class Field : IFieldWithJoinInfo
+{
+    private string? autoTextKey;
+    internal LocalText? caption;
+    internal string expression;
+    internal RowFieldsBase? fields;
+    internal FieldFlags flags;
+    private string? foreignTable;
+    private string? foreignField;
+    internal int index;
+    internal Join? join;
+    internal string? joinAlias;
+    internal string name;
+    internal string? origin;
+    internal string? propertyName;
+    internal HashSet<string>? referencedAliases;
+    private readonly FieldType type;
+    internal object? defaultValue;
+    internal SelectLevel minSelectLevel;
+    internal int naturalOrder;
+    internal string? textualField;
+    private Criteria? criteria;
+    internal string? readPermission;
+    internal string? insertPermission;
+    internal string? updatePermission;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Field"/> class.
+    /// </summary>
+    /// <param name="fields">The fields.</param>
+    /// <param name="type">The type.</param>
+    /// <param name="name">The name.</param>
+    /// <param name="caption">The caption.</param>
+    /// <param name="size">The size.</param>
+    /// <param name="flags">The flags.</param>
+    protected Field(ICollection<Field>? fields, FieldType type, string name, LocalText? caption, int size, FieldFlags flags)
+    {
+        this.name = name;
+        expression = "T0." + SqlSyntax.AutoBracket(name, (fields as RowFieldsBase)?.dialect);
+        Size = size;
+        this.flags = flags;
+        this.type = type;
+        index = -1;
+        minSelectLevel = SelectLevel.Auto;
+        naturalOrder = 0;
+        this.caption = caption;
+        customAttributes = [];
+        fields?.Add(this);
+    }
+
+    /// <summary>
+    /// Gets the fields.
+    /// </summary>
+    /// <value>
+    /// The fields.
+    /// </value>
+    public RowFieldsBase Fields => fields!;
+
+    /// <summary>
+    /// Gets the index.
+    /// </summary>
+    /// <value>
+    /// The index.
+    /// </value>
+    public int Index
+    {
+        get { return index; }
+        internal set { index = value; }
+    }
+
+    /// <summary>
+    /// Gets the column name.
+    /// </summary>
+    public string Name => name;
+
+    /// <summary>
+    /// Gets the type.
+    /// </summary>
+    /// <value>
+    /// The type.
+    /// </value>
+    public FieldType Type => type;
+
+    /// <summary>
+    /// Gets or sets the caption.
+    /// </summary>
+    /// <value>
+    /// The caption.
+    /// </value>
+    public LocalText? Caption
+    {
+        get { return caption; }
+        set { caption = value; }
+    }
+
+    /// <summary>
+    /// Gets or sets the default value.
+    /// </summary>
+    /// <value>
+    /// The default value.
+    /// </value>
+    public object? DefaultValue
+    {
+        get { return defaultValue; }
+        set { defaultValue = value; }
+    }
+
+    /// <summary>
+    /// Gets or sets the referenced aliases.
+    /// </summary>
+    /// <value>
+    /// The referenced aliases.
+    /// </value>
+    public HashSet<string>? ReferencedAliases
+    {
+        get
+        {
+            return referencedAliases;
+        }
+        set
+        {
+            referencedAliases = value;
+        }
+    }
+
+    /// <summary>
+    /// Gets the automatic text key.
+    /// </summary>
+    /// <value>
+    /// The automatic text key.
+    /// </value>
+    public string AutoTextKey => autoTextKey ??= "Db." + fields!.LocalTextPrefix + "." + (propertyName ?? name);
+
+    /// <summary>
+    /// Gets the size.
+    /// </summary>
+    /// <value>
+    /// The size.
+    /// </value>
+    public int Size { get; set; }
+
+    /// <summary>
+    /// Gets or sets the scale.
+    /// </summary>
+    /// <value>
+    /// The scale.
+    /// </value>
+    public int Scale { get; set; }
+
+    /// <summary>
+    /// Gets or sets the flags.
+    /// </summary>
+    /// <value>
+    /// The flags.
+    /// </value>
+    public FieldFlags Flags
+    {
+        get { return flags; }
+        set { flags = value; }
+    }
+
+    /// <summary>
+    /// Gets or sets the name of the property.
+    /// </summary>
+    /// <value>
+    /// The name of the property.
+    /// </value>
+    public string? PropertyName
+    {
+        get { return propertyName; }
+        set { propertyName = value; }
+    }
+
+    internal object[] customAttributes;
+
+    /// <summary>
+    /// Gets or sets the custom attributes.
+    /// </summary>
+    /// <value>
+    /// The custom attributes.
+    /// </value>
+    public object[] CustomAttributes
+    {
+        get { return customAttributes; }
+        set
+        {
+            if (customAttributes != value)
+            {
+                customAttributes = value ?? [];
+                fields?.byAttribute = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Throws an exception for an unexpected JSON token when deserializing a row.
+    /// </summary>
+    /// <param name="reader">The reader.</param>
+    /// <returns>This method always throws.</returns>
+    /// <exception cref="Newtonsoft.Json.JsonSerializationException">Unexpected token when deserializing row: " + reader.TokenType</exception>
+    protected static Exception JsonUnexpectedToken(Newtonsoft.Json.JsonReader reader)
+    {
+        throw new Newtonsoft.Json.JsonSerializationException("Unexpected token when deserializing row: " + reader.TokenType);
+    }
+
+
+    /// <summary>
+    /// Throws an exception for an unexpected JSON token when deserializing a row.
+    /// </summary>
+    /// <param name="reader">The reader.</param>
+    /// <returns>This method always throws.</returns>
+    protected static Exception UnexpectedJsonToken(ref Utf8JsonReader reader)
+    {
+        throw new JsonException("Unexpected token when deserializing row: " + reader.TokenType);
+    }
+
+    /// <summary>
+    /// Copies the field value without marking the target as assigned.
+    /// </summary>
+    /// <param name="source">The source.</param>
+    /// <param name="target">The target.</param>
+    public void CopyNoAssignment(IRow source, IRow target)
+    {
+        Copy(source, target);
+        target.ClearAssignment(this);
+    }
+
+    /// <summary>
+    /// Gets or sets the expression (can be equal to the name if there is no expression).
+    /// </summary>
+    public string Expression
+    {
+        get { return expression; }
+        set
+        {
+            var newValue = value.TrimToNull();
+            if (expression != newValue)
+            {
+                referencedAliases = null;
+                joinAlias = null;
+                origin = null;
+                join = null;
+
+                if (newValue != null)
+                {
+                    expression = newValue;
+                    if (expression.StartsWith("T0.", StringComparison.OrdinalIgnoreCase) &&
+                        SqlSyntax.IsValidQuotedIdentifier(expression[3..]))
+                    {
+                        if (flags.HasFlag(FieldFlags.Calculated))
+                            flags -= FieldFlags.Calculated;
+
+                        if (flags.HasFlag(FieldFlags.Foreign))
+                            flags -= FieldFlags.Foreign;
+
+                        return;
+                    }
+
+                    var aliases = JoinAliasLocator.Locate(value);
+                    if (aliases != null && aliases.Count > 0)
+                    {
+                        referencedAliases = aliases;
+
+                        if (aliases.Count == 1)
+                        {
+                            var enumerator = aliases.GetEnumerator();
+                            enumerator.MoveNext();
+                            var theJoin = enumerator.Current;
+
+                            if (theJoin == "t0" || theJoin == "T0")
+                                flags = flags ^ FieldFlags.Foreign | FieldFlags.Calculated;
+                            else
+                            {
+                                flags |= FieldFlags.Foreign;
+
+                                var split = expression.Split('.');
+                                if (split?.Length == 2 &&
+                                    split[0] == theJoin &&
+                                    SqlSyntax.IsValidQuotedIdentifier(split[1]))
+                                {
+                                    joinAlias = theJoin;
+                                    origin = split[1];
+                                }
+                                else
+                                    flags |= FieldFlags.Calculated;
+                            }
+                        }
+                        else
+                            flags = flags | FieldFlags.Calculated | FieldFlags.Foreign;
+                    }
+                    else if (!SqlSyntax.IsValidQuotedIdentifier(value))
+                        flags |= FieldFlags.Calculated;
+                }
+                else
+                {
+                    expression = "T0." + name;
+
+                    if (flags.HasFlag(FieldFlags.Calculated))
+                        flags -= FieldFlags.Calculated;
+
+                    if (flags.HasFlag(FieldFlags.Foreign))
+                        flags -= FieldFlags.Foreign;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the join alias.
+    /// </summary>
+    /// <value>
+    /// The join alias.
+    /// </value>
+    public string? JoinAlias => joinAlias;
+
+    /// <summary>
+    /// Gets the join.
+    /// </summary>
+    /// <value>
+    /// The join.
+    /// </value>
+    public Join? Join
+    {
+        get
+        {
+            if (join == null &&
+                joinAlias != null)
+            {
+                if (fields!.Joins?.TryGetValue(joinAlias, out Join? theJoin) == true)
+                    join = theJoin;
+            }
+
+            return join;
+        }
+    }
+
+    /// <summary>
+    /// Gets the origin.
+    /// </summary>
+    /// <value>
+    /// The origin.
+    /// </value>
+    public string? Origin => origin;
+
+    /// <summary>
+    /// Gets or sets the foreign table.
+    /// </summary>
+    /// <value>
+    /// The foreign table.
+    /// </value>
+    public string? ForeignTable
+    {
+        get { return foreignTable; }
+        set { foreignTable = value.TrimToNull(); }
+    }
+
+    /// <summary>
+    /// Gets or sets the foreign field.
+    /// </summary>
+    /// <value>
+    /// The foreign field.
+    /// </value>
+    public string? ForeignField
+    {
+        get { return foreignField; }
+        set { foreignField = value.TrimToNull(); }
+    }
+
+    /// <summary>
+    /// Gets or sets the foreign join alias.
+    /// </summary>
+    /// <value>
+    /// The foreign join alias.
+    /// </value>
+    public Join? ForeignJoinAlias
+    {
+        get; set;
+    }
+
+    /// <summary>
+    /// Gets or sets the insert permission.
+    /// </summary>
+    /// <value>
+    /// The insert permission.
+    /// </value>
+    public string? InsertPermission
+    {
+        get { return insertPermission; }
+        set { insertPermission = value; }
+    }
+
+    /// <summary>
+    /// Gets or sets the minimum select level.
+    /// </summary>
+    /// <value>
+    /// The minimum select level.
+    /// </value>
+    public SelectLevel MinSelectLevel
+    {
+        get { return minSelectLevel; }
+        set { minSelectLevel = value; }
+    }
+
+    /// <summary>
+    /// Gets or sets the natural order.
+    /// </summary>
+    /// <value>
+    /// The natural order.
+    /// </value>
+    public int NaturalOrder
+    {
+        get { return naturalOrder; }
+        set { naturalOrder = value; }
+    }
+
+    /// <summary>
+    /// Gets or sets the read permission.
+    /// </summary>
+    /// <value>
+    /// The read permission.
+    /// </value>
+    public string? ReadPermission
+    {
+        get { return readPermission; }
+        set { readPermission = value; }
+    }
+
+    /// <summary>
+    /// Gets or sets the textual field.
+    /// </summary>
+    /// <value>
+    /// The textual field.
+    /// </value>
+    public string? TextualField
+    {
+        get { return textualField; }
+        set { textualField = value; }
+    }
+
+    /// <summary>
+    /// Gets or sets the update permission.
+    /// </summary>
+    /// <value>
+    /// The update permission.
+    /// </value>
+    public string? UpdatePermission
+    {
+        get { return updatePermission; }
+        set { updatePermission = value; }
+    }
+
+    /// <summary>
+    /// Creates a left join from the foreign join index.
+    /// </summary>
+    /// <param name="foreignIndex">Index of the foreign.</param>
+    /// <returns>The created left join.</returns>
+    /// <exception cref="ArgumentNullException">ForeignTable is null or empty.</exception>
+    [Obsolete("This method was used by the old ORM")]
+    public LeftJoin ForeignJoin(int? foreignIndex = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(ForeignTable);
+
+        string foreignJoin;
+        if (foreignIndex == null)
+        {
+            foreignJoin = Name;
+            if (foreignJoin.EndsWith("Id", StringComparison.Ordinal))
+                foreignJoin = foreignJoin[0..^2];
+            else if (foreignJoin.EndsWith("_ID", StringComparison.OrdinalIgnoreCase))
+                foreignJoin = foreignJoin[0..^3];
+
+            foreignJoin = "j" + foreignJoin;
+        }
+        else
+        {
+            foreignJoin = foreignIndex.Value.TableAlias();
+        }
+
+        var joinKeyField = ForeignField ?? Name;
+        var sourceAlias = "T0";
+        var sourceKeyField = Name;
+
+        var join = new LeftJoin(fields!.Joins, ForeignTable, foreignJoin,
+            new Criteria(foreignJoin, joinKeyField) == new Criteria(sourceAlias, sourceKeyField));
+
+        ForeignJoinAlias = join;
+        return join;
+    }
+
+    /// <summary>
+    /// Called when the row is initialized.
+    /// </summary>
+    protected internal virtual void OnRowInitialization()
+    {
+    }
+
+    /// <summary>
+    /// Serializes this field's value to JSON.
+    /// </summary>
+    /// <param name="writer">The writer.</param>
+    /// <param name="row">The row.</param>
+    /// <param name="serializer">The serializer.</param>
+    public abstract void ValueToJson(Newtonsoft.Json.JsonWriter writer, IRow row, Newtonsoft.Json.JsonSerializer serializer);
+    /// <summary>
+    /// Deserializes this field's value from JSON.
+    /// </summary>
+    /// <param name="reader">The reader.</param>
+    /// <param name="row">The row.</param>
+    /// <param name="serializer">The serializer.</param>
+    public abstract void ValueFromJson(Newtonsoft.Json.JsonReader reader, IRow row, Newtonsoft.Json.JsonSerializer serializer);
+
+    /// <summary>
+    /// Serializes this field's value to JSON.
+    /// </summary>
+    /// <param name="row">The row.</param>
+    /// <param name="writer">The writer.</param>
+    /// <param name="options">The serializer options.</param>
+    public abstract void ValueToJson(Utf8JsonWriter writer, IRow row, JsonSerializerOptions options);
+
+    /// <summary>
+    /// Deserializes this field's value from JSON.
+    /// </summary>
+    /// <param name="reader">The reader.</param>
+    /// <param name="row">The row.</param>
+    /// <param name="options">The serializer options.</param>
+    public abstract void ValueFromJson(ref Utf8JsonReader reader, IRow row, JsonSerializerOptions options);
+
+    /// <summary>
+    /// Copies the specified source.
+    /// </summary>
+    /// <param name="source">The source.</param>
+    /// <param name="target">The target.</param>
+    public abstract void Copy(IRow source, IRow target);
+
+    /// <summary>
+    /// Gets field value from a data reader.
+    /// </summary>
+    /// <param name="reader">The reader.</param>
+    /// <param name="index">The index.</param>
+    /// <param name="row">The row.</param>
+    public abstract void GetFromReader(IDataReader reader, int index, IRow row);
+
+    /// <summary>
+    /// Gets the type of the value.
+    /// </summary>
+    /// <value>
+    /// The type of the value.
+    /// </value>
+    public abstract Type ValueType { get; }
+
+    /// <summary>
+    /// Converts the value.
+    /// </summary>
+    /// <param name="source">The source.</param>
+    /// <param name="provider">The provider.</param>
+    /// <returns>The converted value.</returns>
+    public abstract object? ConvertValue(object? source, IFormatProvider provider);
+
+    /// <summary>
+    /// Sets the value of this field in specified row as object using ConvertValue with InvariantCulture.
+    /// </summary>
+    /// <param name="row">The row.</param>
+    /// <param name="value">The value to convert and set.</param>
+    public void AsInvariant(IRow row, object? value)
+    {
+        AsObject(row, ConvertValue(value, CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Compares the field values for two rows for an ascending index sort.
+    /// </summary>
+    /// <param name="row1">The row1.</param>
+    /// <param name="row2">The row2.</param>
+    /// <returns>A value indicating the relative order of the two rows.</returns>
+    public abstract int IndexCompare(IRow row1, IRow row2);
+
+    /// <summary>
+    /// Gets the value of this row as an object.
+    /// </summary>
+    /// <param name="row">The row.</param>
+    /// <returns>The value of the field in the row as an object.</returns>
+    public object? AsObject(IRow row)
+    {
+        row.OnFieldGet(this);
+        return AsObjectNoCheck(row);
+    }
+
+    /// <summary>
+    /// Sets the value of this field in specified row as object.
+    /// </summary>
+    /// <param name="row">The row.</param>
+    /// <param name="value">The value.</param>
+    public abstract void AsObject(IRow row, object? value);
+
+    /// <summary>
+    /// Gets the value of this field in specified row as object, skipping check for assignment
+    /// even if TrackWithChecks is true. Use at your own risk!
+    /// </summary>
+    /// <param name="row">The row.</param>
+    public abstract object? AsObjectNoCheck(IRow row);
+
+    /// <summary>
+    /// Gets if the field value is null without checking for assignment.
+    /// </summary>
+    /// <param name="row">The row.</param>
+    public abstract bool IsNullNoCheck(IRow row);
+
+    /// <summary>
+    /// Gets the value of this row as an SQL value.
+    /// </summary>
+    /// <param name="row">The row.</param>
+    /// <returns>The value of the field in the row as an SQL value.</returns>
+    public virtual object? AsSqlValue(IRow row)
+    {
+        return AsObject(row);
+    }
+
+    /// <summary>
+    /// Determines whether the specified row is null.
+    /// This method checks for assignment if TrackWithChecks is true and
+    /// may throw an exception if the field is unassigned. 
+    /// Use IsNullNoCheck to skip that check.
+    /// </summary>
+    /// <param name="row">The row.</param>
+    /// <returns>
+    ///   <c>true</c> if the specified row is null; otherwise, <c>false</c>.
+    /// </returns>
+    public bool IsNull(IRow row)
+    {
+        row.OnFieldGet(this);
+        return IsNullNoCheck(row);
+    }
+
+    /// <summary>
+    /// Gets the criteria object wrapping this field, it is cached for reuse.
+    /// </summary>
+    /// <value>
+    /// The criteria.
+    /// </value>
+    public Criteria Criteria
+    {
+        get
+        {
+            if (criteria is not null)
+                return criteria;
+
+            criteria = new Criteria(this);
+            return criteria;
+        }
+    }
+
+    /// <summary>
+    /// Gets if this field is one with a LookupInclude attribute or an ID or Name field.
+    /// </summary>
+    public bool IsLookup { get; internal set; }
+
+    IDictionary<string, Join>? IFieldWithJoinInfo.Joins => fields?.Joins;
+
+    /// <summary>
+    /// Gets the column alias. Can be equal to the property name or the name.
+    /// </summary>
+    public string ColumnAlias => propertyName ?? name;
+
+    /// <summary>
+    /// Gets the title.
+    /// </summary>
+    /// <param name="localizer">The localizer.</param>
+    /// <returns>The localized title of the field.</returns>
+    public string GetTitle(ITextLocalizer? localizer)
+    {
+        if (caption is null)
+        {
+            autoTextKey ??= "Db." + fields!.LocalTextPrefix + "." + (propertyName ?? name);
+            return localizer?.TryGet(autoTextKey) ?? propertyName ?? name;
+        }
+
+        return caption.ToString(localizer);
+    }
+
+    /// <summary>
+    /// Converts to string.
+    /// </summary>
+    /// <returns>
+    /// A <see cref="string" /> that represents this instance.
+    /// </returns>
+    public override string? ToString()
+    {
+        return Expression;
+    }
+}

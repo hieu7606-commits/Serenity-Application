@@ -1,0 +1,101 @@
+namespace Serenity.Reflection;
+
+/// <summary>
+/// A class that basically implements IPropertyInfo for PropertyInfo objects
+/// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="WrappedProperty"/> class.
+/// </remarks>
+/// <param name="property">The property.</param>
+public class WrappedProperty(PropertyInfo property) : IPropertyInfo
+{
+    private static readonly ConcurrentDictionary<Type, PropertyInfo?> providerAttributesPropertyByType = new();
+
+    private readonly PropertyInfo property = property;
+    private Attribute[]? cachedAttributesExplicit;
+    private Attribute[]? cachedAttributesInherit;
+
+    /// <summary>
+    /// Gets the name.
+    /// </summary>
+    /// <value>
+    /// The name.
+    /// </value>
+    public string Name => property.Name;
+
+    /// <summary>
+    /// Gets the type of the property.
+    /// </summary>
+    /// <value>
+    /// The type of the property.
+    /// </value>
+    public Type PropertyType => property.PropertyType;
+
+    /// <summary>
+    /// Gets the attribute.
+    /// </summary>
+    /// <typeparam name="TAttr">The type of the attribute.</typeparam>
+    /// <param name="origin">The attribute origin to search.</param>
+    /// <returns>The attribute of the specified type, or <c>null</c> if none is found.</returns>
+    public TAttr? GetAttribute<TAttr>(AttributeOrigin origin = AttributeOrigin.All) where TAttr : Attribute
+    {
+        TAttr? result = null;
+        foreach (var attr in GetCachedAttributes(origin))
+            if (attr is TAttr typed)
+            {
+                if (result is not null)
+                    throw new AmbiguousMatchException(string.Format("Property {0} has multiple attributes of type {1}", Name, typeof(TAttr).FullName));
+
+                result = typed;
+            }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Gets the attributes.
+    /// </summary>
+    /// <typeparam name="TAttr">The type of the attribute.</typeparam>
+    /// <param name="origin">The attribute origin to search.</param>
+    /// <returns>The attributes of the specified type.</returns>
+    public IEnumerable<TAttr> GetAttributes<TAttr>(AttributeOrigin origin = AttributeOrigin.All) where TAttr : Attribute
+    {
+        foreach (var attr in GetCachedAttributes(origin))
+            if (attr is TAttr typed)
+                yield return typed;
+    }
+
+    private Attribute[] GetCachedAttributes(AttributeOrigin origin)
+    {
+        bool inherit = origin.HasFlag(AttributeOrigin.Inherit);
+        var cachedAttributes = inherit ? 
+            cachedAttributesInherit : cachedAttributesExplicit;
+        if (cachedAttributes is not null)
+            return cachedAttributes;
+         
+        var directAttributes = property.GetCustomAttributes<Attribute>(inherit);
+        var allAttributes = new List<Attribute>(directAttributes);
+
+        foreach (var customAttr in directAttributes)
+        {
+            if (customAttr is not IIntrinsicPropertyAttributeProvider)
+                continue;
+
+            var providerAttributesProperty = providerAttributesPropertyByType.GetOrAdd(customAttr.GetType(), static t =>
+                t.GetProperty(nameof(IIntrinsicPropertyAttributeProvider.PropertyAttributes),
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic));
+
+            if (providerAttributesProperty == null)
+                continue;
+
+            allAttributes.AddRange(providerAttributesProperty.GetCustomAttributes<Attribute>(inherit: false));
+        }
+
+        cachedAttributes = [.. allAttributes];
+
+        if (inherit)
+            cachedAttributesInherit = cachedAttributes;
+
+        return cachedAttributesExplicit = cachedAttributes;
+    }
+}

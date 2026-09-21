@@ -1,0 +1,20 @@
+{
+  "name": "@serenity-is/workspace-serenity",
+  "devDependencies": {
+    "@preact/signals-core": "catalog:serenity",
+    "@serenity-is/domwise": "workspace:*",
+    "@vitest/coverage-v8": "catalog:serenity",
+    "dts-bundle-generator": "catalog:serenity",
+    "esbuild": "catalog:serenity",
+    "jsdom": "catalog:serenity",
+    "typescript": "catalog:serenity",
+    "vite": "catalog:serenity",
+    "vitest": "catalog:serenity"
+  },
+  "scripts": {
+    "all": "pnpm i && pnpm -r build && pnpm -r tsc && pnpm -r test"
+  },
+  "private": true,
+  "license": "MIT",
+  "type": "module"
+}

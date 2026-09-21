@@ -1,0 +1,171 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Net.Http.Headers;
+using System.Net;
+
+namespace Serenity.Web.Middleware;
+
+/// <summary>
+/// Dynamic script middleware that handles <c>/DynJS.axd/</c> and <c>/DynamicData/</c> paths.
+/// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="DynamicScriptMiddleware"/> class.
+/// </remarks>
+/// <param name="next">The next request delegate.</param>
+public class DynamicScriptMiddleware(RequestDelegate next)
+{
+    private readonly RequestDelegate next = next;
+    const string dynJSPath = "/DynJS.axd/";
+    const string dynamicDataPath = "/DynamicData/";
+
+    /// <summary>
+    /// Invokes the middleware in the given context.
+    /// </summary>
+    /// <param name="context">The HTTP context.</param>
+    public Task Invoke(HttpContext context)
+    {
+        string path = context.Request.Path.Value ?? string.Empty;
+        bool dynJS = path.StartsWith(dynJSPath, StringComparison.OrdinalIgnoreCase);
+        bool dynamicData = !dynJS && path.StartsWith(dynamicDataPath, StringComparison.OrdinalIgnoreCase);
+
+        if (!dynJS && !dynamicData)
+            return next.Invoke(context);
+
+        var scriptKey = path;
+        scriptKey = scriptKey[(dynJS ? dynJSPath.Length : dynamicDataPath.Length)..];
+
+        string contentType;
+        if (dynJS)
+        {
+            contentType = "text/javascript";
+            if (scriptKey.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
+                scriptKey = scriptKey[0..^3];
+            else if (scriptKey.EndsWith(".css", StringComparison.OrdinalIgnoreCase))
+            {
+                contentType = "text/css";
+                scriptKey = scriptKey[0..^4];
+            }
+        }
+        else
+            contentType = "application/json";
+
+        return ReturnScript(context, scriptKey, contentType, json: dynamicData);
+    }
+
+    /// <summary>
+    /// Returns a dynamic script by its key.
+    /// </summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="scriptKey">The script key.</param>
+    /// <param name="contentType">The content type.</param>
+    /// <param name="json"><c>true</c> to return JSON.</param>
+    public async static Task ReturnScript(HttpContext context, string scriptKey, string contentType, bool json)
+    {
+        IScriptContent? scriptContent;
+        try
+        {
+            scriptContent = context.RequestServices.GetRequiredService<IDynamicScriptManager>()
+                .ReadScriptContent(scriptKey, json);
+        }
+        catch (ValidationError ve)
+        {
+            if (ve.ErrorCode == "AccessDenied")
+            {
+                context.Response.StatusCode = 403;
+                return;
+            }
+
+            throw;
+        }
+
+        if (scriptContent == null)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            await context.Response.WriteAsync("File not found!");
+            return;
+        }
+
+        var mediaType = new MediaTypeHeaderValue(contentType)
+        {
+            Encoding = Encoding.UTF8
+        };
+        context.Response.ContentType = mediaType.ToString();
+
+        var responseHeaders = context.Response.GetTypedHeaders();
+        var cacheControl = new CacheControlHeaderValue
+        {
+            MaxAge = TimeSpan.FromDays(365)
+        };
+
+        // allow CDNs to cache anonymous resources
+        if (!string.IsNullOrEmpty(context.Request.Query["v"]) &&
+            context.User?.IsLoggedIn() != true)
+            cacheControl.Public = true;
+        else                
+            cacheControl.Private = true;
+
+        cacheControl.MustRevalidate = false;
+        responseHeaders.CacheControl = cacheControl;
+
+        var supportsBrotli = scriptContent.CanCompress &&
+            context.Request.Headers.AcceptEncoding.Any(x => x?.Contains("br", StringComparison.Ordinal) == true);
+
+        var supportsGzip = !supportsBrotli && scriptContent.CanCompress && 
+            context.Request.Headers.AcceptEncoding.Any(x => x?.Contains("gzip", StringComparison.Ordinal) == true);
+
+        byte[] contentBytes;
+        if (supportsBrotli)
+        {
+            context.Response.Headers.ContentEncoding = "br";
+            contentBytes = scriptContent.BrotliContent;
+        }
+        else if (supportsGzip)
+        {
+            context.Response.Headers.ContentEncoding = "gzip";
+            contentBytes = scriptContent.CompressedContent;
+        }
+        else
+            contentBytes = scriptContent.Content;
+
+        await WriteWithIfModifiedSinceControl(context, contentBytes,
+            scriptContent.Time);
+    }
+
+    /// <summary>
+    /// Writes file content to the response with If-Modified-Since control.
+    /// </summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="bytes">The content bytes.</param>
+    /// <param name="lastWriteTime">The last write time.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <c>null</c>.</exception>
+    public async static Task WriteWithIfModifiedSinceControl(HttpContext context, byte[] bytes, DateTime lastWriteTime)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        string? ifModifiedSince = context.Request.Headers.IfModifiedSince;
+        if (ifModifiedSince != null && ifModifiedSince.Length > 0)
+        {
+            if (DateTime.TryParseExact(ifModifiedSince, "R", Invariants.DateTimeFormat, DateTimeStyles.None,
+                out DateTime date))
+            {
+                if (date.Year == lastWriteTime.Year &&
+                    date.Month == lastWriteTime.Month &&
+                    date.Day == lastWriteTime.Day &&
+                    date.Hour == lastWriteTime.Hour &&
+                    date.Minute == lastWriteTime.Minute &&
+                    date.Second == lastWriteTime.Second)
+                {
+                    context.Response.StatusCode = (int)HttpStatusCode.NotModified;
+                    return;
+                }
+            }
+        }
+
+        var utcNow = DateTime.UtcNow;
+        if (lastWriteTime >= utcNow)
+            lastWriteTime = utcNow;
+
+        context.Response.GetTypedHeaders().LastModified = lastWriteTime;
+        await context.Response.Body.WriteAsync(bytes.AsMemory(0, bytes.Length));
+    }
+}

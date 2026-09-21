@@ -1,0 +1,37 @@
+import { Attributes, DeleteResponse, EntityDialog, SaveInitiator, SaveResponse, ServiceOptions } from "@serenity-is/corelib";
+import { nsExtensions } from "../ServerTypes/Namespaces";
+
+export abstract class GridEditorDialog<TEntity, P = {}> extends EntityDialog<TEntity, P> {
+    static override[Symbol.typeInfo] = this.registerClass(nsExtensions, [Attributes.panel(false)]);
+
+    protected override getIdProperty() { return this.getRowDefinition()?.idProperty ?? "__id"; }
+
+    public onSave: (options: ServiceOptions<SaveResponse>,
+        callback: (response: SaveResponse) => void, initiator: SaveInitiator) => PromiseLike<SaveResponse>;
+
+    public onDelete: (options: ServiceOptions<DeleteResponse>,
+        callback: (response: DeleteResponse) => void) => PromiseLike<DeleteResponse>;
+
+    override destroy() {
+        this.onSave = null;
+        this.onDelete = null;
+        super.destroy();
+    }
+
+    protected override updateInterface() {
+        super.updateInterface();
+
+        // apply changes button doesn't work properly with in-memory grids yet
+        this.applyChangesButton.hide();
+    }
+
+    protected override saveHandler(options: ServiceOptions<SaveResponse>,
+        callback: (response: SaveResponse) => void, initiator: SaveInitiator): PromiseLike<SaveResponse> {
+        return this.onSave?.(options, callback, initiator);
+    }
+
+    protected override deleteHandler(options: ServiceOptions<DeleteResponse>,
+        callback: (response: DeleteResponse) => void): PromiseLike<DeleteResponse> {
+        return this.onDelete?.(options, callback);
+    }
+}

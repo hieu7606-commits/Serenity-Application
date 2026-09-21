@@ -1,0 +1,160 @@
+namespace Serenity.CodeGenerator;
+
+public partial class TSTypeListerASTTests
+{
+    const string root = "/root/";
+
+    [Fact]
+    public void Resolves_Relative_Module_In_Same_Dir()
+    {
+        var fileSystem = new MockFileSystem();
+        fileSystem.CreateDirectory(root);
+        fileSystem.WriteAllText(root + "a.d.ts", /*lang=typescript*/ """
+            import { B1 } from './b';
+            """);
+
+        fileSystem.WriteAllText(root + "b.d.ts", /*lang=typescript*/ """
+            export class B1 {
+            }
+            """);
+
+        var tl = new TSTypeListerAST(fileSystem, tsConfigDir: root, tsConfig: null);
+        tl.AddInputFile(root + "a.d.ts");
+
+        var types = tl.ExtractTypes();
+
+        Assert.Single(types, x => x.FullName == "/b:B1");
+    }
+
+    [Fact]
+    public void Resolves_Relative_Slash_Module_In_Same_Dir()
+    {
+        var fileSystem = new MockFileSystem();
+        fileSystem.CreateDirectory(root);
+        string fileA = root + "x/y/a.d.ts";
+        fileSystem.CreateDirectory(fileSystem.GetDirectoryName(fileA));
+        fileSystem.WriteAllText(fileA, /*lang=typescript*/ """
+            import { B1 } from '/z/b';
+            """);
+
+        string fileB = root + "z/b.d.ts";
+        fileSystem.CreateDirectory(fileSystem.GetDirectoryName(fileB));
+        fileSystem.WriteAllText(fileB, /*lang=typescript*/ """
+            export class B1 {
+            }
+            """);
+
+        var tl = new TSTypeListerAST(fileSystem, tsConfigDir: root, tsConfig: null);
+        tl.AddInputFile(fileA);
+
+        var types = tl.ExtractTypes();
+
+        Assert.Single(types, x => x.FullName == "/z/b:B1");
+    }
+
+    [Fact]
+    public void Resolves_Module_With_Aliased_Asterisk_Path()
+    {
+        var fileSystem = new MockFileSystem();
+        fileSystem.CreateDirectory(root);
+        string fileA = root + "x/y/a.d.ts";
+        fileSystem.CreateDirectory(fileSystem.GetDirectoryName(fileA));
+        fileSystem.WriteAllText(fileA, /*lang=typescript*/ """
+            import { B1 } from 'my/b';
+            """);
+
+        string fileB = root + "zzz/b.d.ts";
+        fileSystem.CreateDirectory(fileSystem.GetDirectoryName(fileB));
+        fileSystem.WriteAllText(fileB, /*lang=typescript*/ """
+            export class B1 {
+            }
+            """);
+
+        var tl = new TSTypeListerAST(fileSystem, tsConfigDir: root, tsConfig: new TSConfig
+        {
+            CompilerOptions = new()
+            {
+                Paths = new()
+                {
+                    ["my/*"] = [ "./zzz/*" ]
+                }
+            }
+        });
+        tl.AddInputFile(fileA);
+
+        var types = tl.ExtractTypes();
+
+        Assert.Single(types, x => x.FullName == "/zzz/b:B1");
+    }
+
+    [Fact]
+    public void Resolves_Module_With_Aliased_Asterisk_Path_Multiple()
+    {
+        var fileSystem = new MockFileSystem();
+        fileSystem.CreateDirectory(root);
+        string fileA = root + "x/y/a.d.ts";
+        fileSystem.CreateDirectory(fileSystem.GetDirectoryName(fileA));
+        fileSystem.WriteAllText(fileA, /*lang=typescript*/ """
+            import { B1 } from 'my/b';
+            """);
+
+        string fileB = root + "zzz/b.d.ts";
+        fileSystem.CreateDirectory(fileSystem.GetDirectoryName(fileB));
+        fileSystem.WriteAllText(fileB, /*lang=typescript*/ """
+            export class B1 {
+            }
+            """);
+
+        var tl = new TSTypeListerAST(fileSystem, tsConfigDir: root, tsConfig: new TSConfig
+        {
+            CompilerOptions = new()
+            {
+                Paths = new()
+                {
+                    ["my/*"] = [ "./nnn", "./zzz/*" ]
+                }
+            }
+        });
+        tl.AddInputFile(fileA);
+
+        var types = tl.ExtractTypes();
+
+        Assert.Single(types, x => x.FullName == "/zzz/b:B1");
+    }
+
+    [Fact]
+    public void Resolves_Node_Module_In_TsConfig_Dir()
+    {
+        var fileSystem = new MockFileSystem();
+        fileSystem.CreateDirectory(root);
+        string fileA = root + "x/y/a.d.ts";
+        fileSystem.CreateDirectory(fileSystem.GetDirectoryName(fileA));
+        fileSystem.WriteAllText(fileA, /*lang=typescript*/ """
+            import { B1 } from 'module-a';
+            """);
+
+        string moduleAPackage = root + "node_modules/module-a/package.json";
+        string moduleAIndexTS = root + "node_modules/module-a/src/index.ts";
+        fileSystem.CreateDirectory(fileSystem.GetDirectoryName(moduleAIndexTS));
+
+        fileSystem.WriteAllText(moduleAPackage, /*lang=json*/ """
+            {
+                "types": "src/index.ts"
+            }
+            """);
+
+        fileSystem.WriteAllText(moduleAIndexTS, /*lang=typescript*/ """
+            export class A1 {
+            }
+            """);
+
+        var tl = new TSTypeListerAST(fileSystem, tsConfigDir: root, tsConfig: new TSConfig
+        {
+        });
+        tl.AddInputFile(fileA);
+
+        var types = tl.ExtractTypes();
+
+        Assert.Single(types, x => x.FullName == "module-a:A1");
+    }
+}

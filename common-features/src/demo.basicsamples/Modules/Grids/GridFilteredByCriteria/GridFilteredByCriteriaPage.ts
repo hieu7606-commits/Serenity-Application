@@ -1,0 +1,33 @@
+﻿import { Criteria, EntityGrid, ListRequest, gridPageInit } from "@serenity-is/corelib";
+import { ProductColumns, ProductDialog, ProductRow, ProductService } from "@serenity-is/demo.northwind";
+import { nsDemoBasicSamples } from "../../ServerTypes/Namespaces";
+
+export default () => gridPageInit(GridFilteredByCriteria);
+
+export class GridFilteredByCriteria<P = {}> extends EntityGrid<ProductRow, P> {
+    static override[Symbol.typeInfo] = this.registerClass(nsDemoBasicSamples);
+
+    protected override getColumnsKey() { return ProductColumns.columnsKey; }
+    protected override getDialogType() { return ProductDialog; }
+    protected override getRowDefinition() { return ProductRow; }
+    protected override getService() { return ProductService.baseUrl; }
+
+    protected override setViewParams() {
+        super.setViewParams();
+
+        // view object is the data source for grid (SlickRemoteView)
+        // this is an EntityGrid so its Params object is a ListRequest
+        const request = this.view.params as ListRequest;
+
+        // list request has a Criteria parameter
+        // we AND criteria here to existing one because 
+        // otherwise we might clear filter set by 
+        // an edit filter dialog if any.
+
+        const fld = ProductRow.Fields;
+        request.Criteria = Criteria.and(request.Criteria,
+            Criteria(fld.UnitsInStock).gt(10),
+            Criteria(fld.CategoryName).ne('Condiments'),
+            Criteria(fld.Discontinued).eq(0));
+    }
+}

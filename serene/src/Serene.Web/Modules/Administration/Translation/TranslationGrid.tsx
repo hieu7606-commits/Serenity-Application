@@ -1,0 +1,230 @@
+import { confirmDialog, EntityGrid, Fluent, GridUtils, LookupEditor, LookupEditorOptions, notifySuccess, stripDiacritics, ToolButton, trimToEmpty, trimToNull, Widget } from "@serenity-is/corelib";
+import { TranslationItem, TranslationTexts } from "@serenity-is/extensions";
+import { Column } from "@serenity-is/sleekgrid";
+import { TranslationService } from "../../ServerTypes/Administration";
+import { nsAdministration } from "../../ServerTypes/Namespaces";
+
+export class TranslationGrid extends EntityGrid<TranslationItem, any> {
+    static override[Symbol.typeInfo] = this.registerClass(nsAdministration);
+
+    protected override getIdProperty() { return "Key"; }
+    protected override getLocalTextPrefix() { return "Administration.Translation"; }
+    protected override getService() { return TranslationService.baseUrl; }
+
+    private hasChanges: boolean;
+    private searchText: string;
+    private sourceLanguage: LookupEditor;
+    private targetLanguage: LookupEditor;
+    private targetLanguageKey: string;
+
+    constructor(props: any) {
+        super(props);
+
+        this.element.on('keyup.' + this.uniqueName + ' change.' + this.uniqueName,
+            'input.custom-text', e => {
+                let value = trimToNull(Fluent(e.target).val());
+                if (value === '') {
+                    value = null;
+                }
+                this.view.getItemById(Fluent(e.target).data('key')).CustomText = value;
+                this.hasChanges = true;
+            });
+    }
+
+    protected override onClick(e: MouseEvent, row: number, cell: number): any {
+        super.onClick(e, row, cell);
+
+        if (e.defaultPrevented || (e as any)?.isDefaultPrevented?.()) {
+            return;
+        }
+
+        const item = this.itemAt(row);
+        let done: () => void;
+
+        if (Fluent(e.target).hasClass('source-text')) {
+            e.preventDefault();
+
+            done = () => {
+                item.CustomText = item.SourceText;
+                this.view.updateItem(item.Key, item);
+                this.hasChanges = true;
+            };
+
+            if (!item.CustomText?.trim() ||
+                (trimToEmpty(item.CustomText) === trimToEmpty(item.SourceText))) {
+                done();
+                return;
+            }
+
+            confirmDialog(TranslationTexts.OverrideConfirmation, done);
+            return;
+        }
+
+        if (Fluent(e.target).hasClass('target-text')) {
+            e.preventDefault();
+
+            done = () => {
+                item.CustomText = item.TargetText;
+                this.view.updateItem(item.Key, item);
+                this.hasChanges = true;
+            };
+
+            if (!item.CustomText?.trim() ||
+                (trimToEmpty(item.CustomText) === trimToEmpty(item.TargetText))) {
+                done();
+                return;
+            }
+
+            confirmDialog(TranslationTexts.OverrideConfirmation, done);
+            return;
+        }
+    }
+
+    protected override createColumns(): Column[] {
+
+        const columns: Column[] = [];
+        columns.push({
+            field: 'Key',
+            name: TranslationTexts.Key,
+            width: 300,
+            sortable: false
+        });
+
+        columns.push({
+            field: 'SourceText',
+            name: TranslationTexts.SourceText,
+            width: 300,
+            sortable: false,
+            format: ctx => <a class="source-text">{ctx.value ?? ''}</a>
+        });
+
+        columns.push({
+            field: 'CustomText',
+            name: TranslationTexts.CustomText,
+            width: 300,
+            sortable: false,
+            format: ctx => <input class="custom-text" value={ctx.value ?? ''} type="text" placeholder={ctx.item.TargetText} data-key={ctx.item.Key} />
+        });
+
+        return columns;
+    }
+
+    protected override createToolbarExtensions(): void {
+        super.createToolbarExtensions();
+
+        const opt: LookupEditorOptions = {
+            lookupKey: 'Administration.Language'
+        };
+
+        this.sourceLanguage = Widget.create({
+            type: LookupEditor,
+            element: el => el.appendTo(this.toolbar.element).attr('placeholder', '--- ' +
+                TranslationTexts.SourceLanguage + ' ---'),
+            options: opt
+        });
+
+        this.sourceLanguage.changeSelect2(e => {
+            if (this.hasChanges) {
+                this.saveChanges(this.targetLanguageKey).then(() => this.refresh());
+            }
+            else {
+                this.refresh();
+            }
+        });
+
+        this.targetLanguage = Widget.create({
+            type: LookupEditor,
+            element: el => el.appendTo(this.toolbar.element).attr('placeholder', '--- ' +
+                TranslationTexts.TargetLanguage + ' ---'),
+            options: opt
+        });
+
+        this.targetLanguage.changeSelect2(e => {
+            if (this.hasChanges) {
+                this.saveChanges(this.targetLanguageKey).then(() => this.refresh());
+            }
+            else {
+                this.refresh();
+            }
+        });
+    }
+
+    protected saveChanges(language: string): PromiseLike<any> {
+        const translations: { [key: string]: string } = {};
+        for (const item of this.getItems()) {
+            translations[item.Key] = item.CustomText;
+        }
+
+        return Promise.resolve(TranslationService.Update({
+            TargetLanguageID: language,
+            Translations: translations
+        })).then(() => {
+            this.hasChanges = false;
+            language = trimToNull(language) || 'invariant';
+            notifySuccess('User translations in "' + language +
+                '" language are saved to "user.texts.' +
+                language + '.json" ' + 'file under "~/App_Data/texts/"', '');
+        });
+    }
+
+    protected override setViewParams() {
+        super.setViewParams();
+        const request = this.view.params;
+        request.SourceLanguageID = this.sourceLanguage.value;
+        this.targetLanguageKey = this.targetLanguage.value || '';
+        request.TargetLanguageID = this.targetLanguageKey;
+    }
+
+    protected override onViewSubmit() {
+        if (!super.onViewSubmit())
+            return false;
+        this.hasChanges = false;
+        return true;
+    }
+
+    protected override getButtons(): ToolButton[] {
+        return [{
+            title: TranslationTexts.SaveChangesButton,
+            onClick: e => this.saveChanges(this.targetLanguageKey).then(() => this.refresh()),
+            cssClass: 'apply-changes-button'
+        }];
+    }
+
+    protected override createQuickSearchInput() {
+        GridUtils.addQuickSearch({
+            container: this.toolbar.element,
+            search: ({ query, done }) => {
+                this.searchText = query;
+                this.view.setItems(this.view.getItems(), true);
+                done(this.rowCount() > 0);
+            }
+        });
+    }
+
+    protected override onViewFilter(item: TranslationItem) {
+        if (!super.onViewFilter(item)) {
+            return false;
+        }
+
+        if (!this.searchText) {
+            return true;
+        }
+
+        const sd = stripDiacritics;
+        const searching = sd(this.searchText).toLowerCase();
+
+        function match(str: string) {
+            if (!str)
+                return false;
+
+            return str.toLowerCase().indexOf(searching) >= 0;
+        }
+
+        return !searching || match(item.Key) || match(item.SourceText) ||
+            match(item.TargetText) || match(item.CustomText);
+    }
+
+    protected override usePager() {
+        return false;
+    }
+}

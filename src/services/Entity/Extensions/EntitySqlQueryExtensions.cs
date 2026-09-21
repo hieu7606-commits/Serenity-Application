@@ -1,0 +1,271 @@
+namespace Serenity.Data;
+
+/// <summary>
+///   Extensions for <see cref="SqlQuery"/>.
+/// </summary>
+public static class EntitySqlQueryExtensions
+{
+    /// <summary>
+    /// Adds a table to the FROM statement with "T0" alias and sets it as the target for future field selections.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="entity">The entity.</param>
+    /// <returns>
+    /// The query itself.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">entity is null.</exception>
+    public static SqlQuery From(this SqlQuery query, IEntity entity)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+
+        if (entity is IRow row)
+        {
+            var fields = row.Fields;
+            query.From(fields);
+            if (!query.IsDialectOverridden)
+                query.Dialect(fields.Dialect);
+        }
+        else
+        {
+            if (entity is IAlias alias && (alias.Name == "t0" || alias.Name == "T0") && alias.Table == entity.Table)
+                query.From(alias);
+            else
+                query.From(entity.Table, Alias.T0);
+        }
+
+        return query.Into(entity);
+    }
+
+    /// <summary>
+    /// Adds the specified entity to the INTO list of the query, 
+    /// and sets it as the current INTO row.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="into">The into.</param>
+    /// <returns>The query itself.</returns>
+    public static SqlQuery Into(this SqlQuery query, IEntity into)
+    {
+        var ext = (ISqlQueryExtensible)query;
+        ext.IntoRowSelection(into);
+
+        return query;
+    }
+
+    /// <summary>
+    /// Adds a field's expression to the SELECT statement with its own column name. 
+    /// If a join alias is referenced in the field expression, and the join is defined in 
+    /// the field's entity class, it is automatically included in the query. 
+    /// The field is marked as a target at the current index for future loading from a data reader.
+    /// </summary>
+    /// <param name="field">The field object.</param>
+    /// <param name="query">The SQL query.</param>
+    /// <returns>The query itself.</returns>
+    public static SqlQuery Select(this SqlQuery query, IField field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        query.EnsureJoinsInExpression(field.Expression);
+        _ = new SqlQuery.Column(query, field.Expression, field.ColumnAlias, field);
+        return query;
+    }
+
+    /// <summary>
+    /// Adds a field's expression to the SELECT statement with a given column name.
+    /// If a join alias is referenced in the field expression, and the join is defined in
+    /// the field's entity class, it is automatically included in the query.
+    /// The field is marked as a target at the current index for future loading from a data reader.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="field">The field object.</param>
+    /// <param name="columnName">Name of the column.</param>
+    /// <returns>
+    /// The query itself.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// field
+    /// or
+    /// columnName
+    /// </exception>
+    public static SqlQuery Select(this SqlQuery query, IField field, string columnName)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        ArgumentNullException.ThrowIfNull(columnName);
+
+        query.EnsureJoinsInExpression(field.Expression);
+        _ = new SqlQuery.Column(query, field.Expression, columnName, field);
+        return query;
+    }
+
+    /// <summary>
+    /// Adds a field of a given table alias to the SELECT statement.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="alias">A table alias that will be prepended to the field name with "." between.</param>
+    /// <param name="field">A field that only its name will be used. It won't be set as a target.</param>
+    /// <returns>
+    /// The query itself.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// alias
+    /// or
+    /// field
+    /// </exception>
+    /// <remarks>
+    /// No column name is set for the selected field.
+    /// Also the field is not set as a target, unlike the field only overload, only the field name is used.
+    /// </remarks>
+    public static SqlQuery Select(this SqlQuery query, IAlias alias, IField field)
+    {
+        ArgumentNullException.ThrowIfNull(alias);
+
+        ArgumentNullException.ThrowIfNull(field);
+
+        return query.Select(alias.NameDot + field);
+    }
+
+
+    /// <summary>
+    /// Adds a field of a given table alias to the SELECT statement.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="alias">A table alias that will be prepended to the field name with "." between.</param>
+    /// <param name="field">A field that only its field name will be used. It won't be set as a target.</param>
+    /// <param name="columnName">A column name.</param>
+    /// <returns>
+    /// The query itself.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// alias
+    /// or
+    /// field
+    /// or
+    /// columnName
+    /// </exception>
+    /// <remarks>
+    /// The field is not set as a target, unlike the field only overload, only the field name is used.
+    /// </remarks>
+    public static SqlQuery Select(this SqlQuery query, IAlias alias, IField field, string columnName)
+    {
+        ArgumentNullException.ThrowIfNull(alias);
+
+        ArgumentNullException.ThrowIfNull(field);
+
+        ArgumentNullException.ThrowIfNull(columnName);
+
+        return query.Select(alias.NameDot + SqlSyntax.AutoBracket(field.Name, query.Dialect()), columnName);
+    }
+
+    /// <summary>
+    /// For each field in the fields array, adds the expression of the field to
+    /// the SELECT statement with a column name of its name.
+    /// If a join alias is referenced in the field expression, and the join is defined in
+    /// the field's entity class, it is automatically included in the query.
+    /// The fields are marked as a target at the current index for future loading from a data reader.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="fields">The field objects.</param>
+    /// <returns>
+    /// The query itself.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">fields is null.</exception>
+    public static SqlQuery Select(this SqlQuery query, params IField[] fields)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+
+        foreach (IField field in fields)
+            Select(query, field);
+
+        return query;
+    }
+
+    /// <summary>
+    /// Adds a field or an expression to the SELECT statement with a column name of a
+    /// field's name. The field is marked as a target at the current index for future loading
+    /// from a data reader.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="expression">A field name or an expression.</param>
+    /// <param name="intoField">A field object whose name is to be used as a column name.</param>
+    /// <returns>
+    /// The query itself.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// field
+    /// or
+    /// alias
+    /// </exception>
+    public static SqlQuery SelectAs(this SqlQuery query, string expression, IField intoField)
+    {
+        if (string.IsNullOrEmpty(expression))
+            throw new ArgumentNullException(nameof(expression));
+
+        ArgumentNullException.ThrowIfNull(intoField);
+
+        _ = new SqlQuery.Column(query, expression, intoField.ColumnAlias, intoField);
+        return query;
+    }
+
+    /// <summary>
+    /// Adds a field's expression to the order by list.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="field">The field.</param>
+    /// <param name="desc">if set to <c>true</c>, sorts in descending order.</param>
+    /// <returns>The query itself.</returns>
+    /// <exception cref="ArgumentNullException">field is null.</exception>
+    public static SqlQuery OrderBy(this SqlQuery query, IField field, bool desc = false)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        return query.OrderBy(field.Expression, desc);
+    }
+
+    /// <summary>
+    /// Adds field expressions to the order by list.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="fields">The fields.</param>
+    /// <returns>The query itself.</returns>
+    /// <exception cref="ArgumentNullException">fields is null.</exception>
+    public static SqlQuery OrderBy(this SqlQuery query, params IField[] fields)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+
+        foreach (IField field in fields)
+            OrderBy(query, field);
+
+        return query;
+    }
+
+    /// <summary>
+    /// Adds a field's expression to the group by list.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="field">The field.</param>
+    /// <returns>The query itself.</returns>
+    /// <exception cref="ArgumentNullException">field is null.</exception>
+    public static SqlQuery GroupBy(this SqlQuery query, IField field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        return query.GroupBy(field.Expression);
+    }
+
+    /// <summary>
+    /// Adds field expressions to the group by list.
+    /// </summary>
+    /// <param name="query">The query.</param>
+    /// <param name="fields">The fields.</param>
+    /// <returns>The query itself.</returns>
+    /// <exception cref="ArgumentNullException">fields is null.</exception>
+    public static SqlQuery GroupBy(this SqlQuery query, params IField[] fields)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+
+        foreach (IField f in fields)
+            GroupBy(query, f);
+
+        return query;
+    }
+}

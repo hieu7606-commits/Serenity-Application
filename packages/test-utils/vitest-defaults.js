@@ -1,0 +1,87 @@
+import { execFileSync } from "child_process";
+import { existsSync, readdirSync, readFileSync } from "fs";
+import { basename, join, resolve } from "path";
+import { fileURLToPath } from 'url';
+import { defineConfig } from "vitest/config";
+
+const testUtils = resolve(join(fileURLToPath(new URL('.', import.meta.url)), './'));
+const serenityRoot = resolve(join(testUtils, "../../"));
+
+export default (opt) => {
+
+    const projectRoot = resolve(opt?.projectRoot ?? "./");
+
+    if ((opt?.dynamicData ?? true)) {
+        const isWebProject = projectRoot.indexOf('Serene.Web') >= 0 || projectRoot.indexOf('StartSharp.Web') >= 0;
+        if ((isWebProject && !existsSync(resolve(`./dynamic-data/Columns.Administration.Language.json`))) ||
+            (!isWebProject && !existsSync(resolve(`${testUtils}/dynamic-data/Columns.Administration.Language.json`)))) {
+            if (projectRoot.indexOf('Serene.Web') >= 0 || !tryProject(`${serenityRoot}/..`, "StartSharp"))
+                tryProject(`${serenityRoot}/serene`, "Serene");
+        }
+    }
+
+    const provide = {};
+    if (opt?.dynamicData ?? true) {
+        for (var folder of [join(testUtils, "dynamic-data"), join(projectRoot, "dynamic-data")]) {
+            if (existsSync(folder)) {
+                for (var file of readdirSync(folder)) {
+                    if (file.endsWith(".json")) {
+                        provide["dynamic-data/" + basename(file)] = readFileSync(join(folder, file), "utf8");
+                    }
+                }
+            }
+        }
+    }
+
+    return defineConfig({
+        server: {
+            fs: {
+                allow: [serenityRoot, testUtils, projectRoot]
+            }
+        },
+        test: {
+            name: opt?.name,
+            environment: "jsdom",
+            execArgv: [
+                Number(process.versions.node.split('.')[0]) >= 25 ? '--no-webstorage' : null
+            ].filter(x => x != null),
+            globals: true,
+            pool: "vmThreads",
+            provide,
+            coverage: {
+                reporter: ["json", "html", "text"],
+                include: ["Modules/**/*.{ts,tsx}"]
+            }
+        }
+    });
+}
+
+function tryProject(root, name) {
+    const target = "net10.0";
+    const folder = `${root}/src/${name}.Web`;
+    const csproj = `${folder}/${name}.Web.csproj`;
+    if (!existsSync(csproj))
+        return false;
+
+    const debugDll = `${folder}/bin/Debug/${target}/${name}.Web.dll`;
+    const releaseDll = `${folder}/bin/Release/${target}/${name}.Web.dll`;
+
+    let debugExists = existsSync(debugDll);
+    let releaseExists = !debugExists && existsSync(releaseDll);
+    if (!debugExists && !releaseExists) {
+        console.info("Building " + csproj + "...");
+        execFileSync("dotnet", ["build", csproj, "--p:SkipTSBuild=true"], { timeout: 120000 });
+    }
+
+    debugExists = existsSync(debugDll);
+    releaseExists = !debugExists && existsSync(releaseDll);
+    if (debugExists || releaseExists) {
+        console.info("Preparing dynamic data for " + name + " via dotnet " + (debugExists ? debugDll : releaseDll) + " dynamic-data ...");
+        execFileSync("dotnet", [debugExists ? debugDll : releaseDll, "dynamic-data"], {
+            timeout: 120000,
+            cwd: resolve(".").indexOf(name + ".Web") >= 0 ? resolve("./") : testUtils
+        });
+    }
+
+    return true;
+}

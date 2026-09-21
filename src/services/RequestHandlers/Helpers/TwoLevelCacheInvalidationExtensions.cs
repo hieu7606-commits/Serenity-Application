@@ -1,0 +1,107 @@
+namespace Serenity.Services;
+
+/// <summary>
+/// Contains helper methods for two level cache invalidation
+/// </summary>
+public static class TwoLevelCacheInvalidationExtensions
+{
+    private class GenerationUpdater(ITwoLevelCache cache, string groupKey)
+    {
+        private readonly string groupKey = groupKey ?? throw new ArgumentNullException(nameof(groupKey));
+        private readonly ITwoLevelCache cache = cache ?? throw new ArgumentNullException(nameof(cache));
+
+        public void Update()
+        {
+            cache.ExpireGroupItems(groupKey);
+        }
+    }
+
+    /// <summary>
+    /// Invalidates cached items related to a group key when the
+    /// unit of work commits.
+    /// </summary>
+    /// <param name="cache">Cache</param>
+    /// <param name="uow">Unit of work</param>
+    /// <param name="groupKey">Group key</param>
+    /// <exception cref="ArgumentNullException"><paramref name="cache"/> is <c>null</c>.</exception>
+    public static void InvalidateOnCommit(this ITwoLevelCache cache, IUnitOfWork uow, string groupKey)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+
+        if (string.IsNullOrEmpty(groupKey))
+            throw new ArgumentNullException(nameof(groupKey));
+
+        var updater = cache.Memory.Get("BatchGenerationUpdater:UpdaterInstance:" + groupKey, TimeSpan.Zero,
+            () => new GenerationUpdater(cache, groupKey))!;
+
+        uow.OnCommit -= updater.Update;
+        uow.OnCommit += updater.Update;
+    }
+
+    private static void ProcessTwoLevelCachedAttribute(ITwoLevelCache cache, IUnitOfWork uow, Type type)
+    {
+        if (type == null)
+            return;
+
+        var attr = type.GetCustomAttributes<TwoLevelCachedAttribute>(true).ToArray();
+        if (attr.Length == 0)
+            return;
+
+        foreach (var a in attr)
+        {
+            if (a.GenerationKeys != null)
+            {
+                foreach (var key in a.GenerationKeys)
+                {
+                    InvalidateOnCommit(cache, uow, key);
+                }
+            }
+
+            if (a.LinkedRows != null)
+            {
+                foreach (var rowType in a.LinkedRows)
+                {
+                    var rowInstance = (IRow)Activator.CreateInstance(rowType)!;
+                    InvalidateOnCommit(cache, uow, rowInstance.GetFields().GenerationKey);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Invalidates cached items related to fields class group key and
+    /// any related fields types specified using TwoLevelCached attributes
+    /// on the row type.
+    /// </summary>
+    /// <param name="cache">Cache</param>
+    /// <param name="uow">Unit of work</param>
+    /// <param name="fields">Fields type</param>
+    /// <exception cref="ArgumentNullException"><paramref name="fields"/> is <c>null</c>.</exception>
+    public static void InvalidateOnCommit(this ITwoLevelCache cache, IUnitOfWork uow, RowFieldsBase fields)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+
+        InvalidateOnCommit(cache, uow, fields.GenerationKey);
+
+        var fieldsType = fields.GetType();
+        if (fieldsType.IsNested && fieldsType.DeclaringType != null)
+            ProcessTwoLevelCachedAttribute(cache, uow, fieldsType.DeclaringType);
+    }
+
+    /// <summary>
+    /// Invalidates cached items on commit for specified row type
+    /// and any related field types specified using TwoLevelCached attributes
+    /// on the row type.
+    /// </summary>
+    /// <param name="cache">Cache</param>
+    /// <param name="uow">Unit of work</param>
+    /// <param name="row">Row type</param>
+    /// <exception cref="ArgumentNullException"><paramref name="row"/> is <c>null</c>.</exception>
+    public static void InvalidateOnCommit(this ITwoLevelCache cache, IUnitOfWork uow, IRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+
+        InvalidateOnCommit(cache, uow, row.GetFields().GenerationKey);
+        ProcessTwoLevelCachedAttribute(cache, uow, row.GetType());
+    }
+}

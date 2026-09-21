@@ -1,0 +1,17 @@
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)..\build\Package.Build.props" Condition="Exists('$(MSBuildThisFileDirectory)..\build\Package.Build.props')" />
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <TargetFramework>net10.0</TargetFramework>
+    <TypeScriptCompileBlocked>true</TypeScriptCompileBlocked>
+    <DefaultItemExcludes>node_modules\**;coverage\**;out\**;</DefaultItemExcludes>
+    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+    <ArtifactsPath>$(MSBuildThisFileDirectory)..\artifacts</ArtifactsPath>    
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+    <SkipTSBuild Condition="'$(SkipTSBuild)' == '' And '$(DesignTimeBuild)' == 'true'">true</SkipTSBuild>
+    <RunTSBuild Condition="'$(RunTSBuild)' == '' And '$(SkipTSBuild)' != 'true'">true</RunTSBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <NpmPackageFile Include="$(MSBuildThisFileDirectory)..\package.json" Condition="Exists('$(MSBuildProjectDirectory)\package.json')" />
+  </ItemGroup>
+</Project>

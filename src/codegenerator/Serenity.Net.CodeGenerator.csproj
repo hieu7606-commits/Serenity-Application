@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>sergen</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <OutputPath>$(ArtifactsPath)\bin\$(MSBuildProjectName)</OutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <RootNamespace>Serenity.CodeGenerator</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PackAsTool>true</PackAsTool>
+    <PackageId>sergen</PackageId>
+    <DefineConstants Condition="'$(NoDbProviders)' == 'true'">$(DefineConstants);NoDbProviders</DefineConstants>
+    <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Templates\*.scriban" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\services\Serenity.Net.Services.csproj" />
+    <InternalsVisibleTo Include="Serenity.Net.CodeGenerator.Tests" />
+    <Compile Include="..\typescript\**\*.cs" Link="TypeScript\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <Import Project="$(MSBuildThisFileDirectory)..\CommonDbProviders.props" Condition="'$(NoDbProviders)' != 'true'" />
+  <ItemGroup>
+    <PackageReference Include="Scriban" Version="7.2.6" />
+    <PackageReference Include="Mono.Cecil" Version="0.11.6" />
+    <PackageReference Include="Microsoft.Extensions.DependencyModel" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.11" />
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+  </ItemGroup>
+</Project>

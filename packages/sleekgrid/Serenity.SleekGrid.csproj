@@ -1,0 +1,9 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <Description>NuGet version of @serenity-is/sleekgrid NPM package</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Update="$(MSBuildProjectDirectory)\docs\**\*" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" Pack="false" />
+    <ProjectReference Include="..\domwise\Serenity.DomWise.csproj" ReferenceOutputAssembly="false" PrivateAssets="All" IncludeAssets="none" ExcludeAssets="all" />
+  </ItemGroup>
+</Project>

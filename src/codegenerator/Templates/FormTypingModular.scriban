@@ -1,0 +1,22 @@
+export interface {{FormClassName}} {
+    {{~for x in FormFields~}}
+    {{x.PropertyName}}: {{x.TSEditorType}};
+    {{~end~}}
+}
+
+export class {{FormClassName}} extends {{IMPORTFROMCORELIB "PrefixedContext"}} {
+    static readonly formKey = '{{FormKey}}';
+    private static init: boolean;
+    
+    constructor(...args: ConstructorParameters<typeof PrefixedContext>) {
+        super(...args);
+
+        if (!{{FormClassName}}.init)  {
+            {{FormClassName}}.init = true;
+
+            {{IMPORTFROMCORELIB "initFormType"}}({{FormClassName}}, [{{for x in FormFields}}
+                '{{x.PropertyName}}', {{IMPORTFROMCORELIB x.TSEditorType}},{{end}}
+            ]);
+        }
+    }
+}

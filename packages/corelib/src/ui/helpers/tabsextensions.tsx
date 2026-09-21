@@ -1,0 +1,287 @@
+import { Fluent, getjQuery, isArrayLike } from "../../base";
+
+export { };
+
+/**
+ * Helper functions for working with tab controls, supporting both jQuery UI
+ * tabs and Bootstrap-style tabs.
+ */
+export namespace TabsExtensions {
+    const navLinkSelector = ":scope > ul > li > a.nav-link, :scope > li > a.nav-link, :scope > a.nav-link, :scope > ul > li > a.ui-tabs-anchor, :scope > li > a.ui-tabs-anchor";
+    const navLinkSelectorActive = ":scope > ul > li > a.nav-link.active, :scope > li > a.nav-link.active, :scope > a.nav-link.active, :scope > ul > li.ui-tabs-active > a, :scope > li.ui-tabs-active > a";
+
+    /**
+     * Enables or disables a tab.
+     * @param tabs - The tabs element (or array-like of elements).
+     * @param tabKey - The tab key or index.
+     * @param isDisabled - Whether the tab should be disabled.
+     */
+    export function setDisabled(tabs: ArrayLike<HTMLElement> | HTMLElement, tabKey: string | number, isDisabled: boolean) {
+        tabs = isArrayLike(tabs) ? tabs[0] : tabs;
+        if (!tabs || typeof tabs === "string")
+            return;
+
+        let index: number;
+        if (typeof tabKey === "number")
+            index = tabKey;
+        else {
+            const ibk = indexByKey(tabs);
+            if (!ibk)
+                return;
+            index = ibk[tabKey];
+            if (index == null) {
+                return;
+            }
+        }
+
+        const $ = getjQuery();
+        if (!$ || !$(tabs)?.data?.().uiTabs) {
+            const anchors = Array.from(tabs.querySelectorAll<HTMLElement>(navLinkSelector));
+            if (index < anchors.length) {
+                if (isDisabled && anchors[index].classList.contains("active")) {
+                    const newIndex = anchors.findIndex((x, i) => i !== index && !x.classList.contains("disabled"));
+                    if (newIndex >= 0)
+                        anchors[newIndex].click();
+                }
+                anchors[index].classList.toggle("disabled", !!isDisabled);
+
+            }
+            return;
+        }
+
+        if (isDisabled && index === $(tabs)?.tabs?.('option', 'active')) {
+            $(tabs).tabs?.('option', 'active', 0);
+        }
+
+        $(tabs).tabs?.(isDisabled ? 'disable' : 'enable', index);
+    }
+
+    /**
+     * Shows or hides a tab.
+     * @param tabs - The tabs element (or array-like of elements).
+     * @param tabKey - The tab key or index.
+     * @param visible - Whether the tab should be visible.
+     */
+    export function toggle(tabs: ArrayLike<HTMLElement> | HTMLElement, tabKey: string | number, visible: boolean) {
+        tabs = isArrayLike(tabs) ? tabs[0] : tabs;
+        if (!tabs || typeof tabs === "string")
+            return;
+
+        let index: number;
+        if (typeof tabKey === "number")
+            index = tabKey;
+        else {
+            const ibk = indexByKey(tabs);
+            if (!ibk)
+                return;
+            index = ibk[tabKey];
+            if (index == null) {
+                return;
+            }
+        }
+
+        const $ = getjQuery();
+        if (!$ || !$(tabs).data?.().uiTabs) {
+            const anchors = Array.from(tabs.querySelectorAll<HTMLAnchorElement>(navLinkSelector));
+            if (index < anchors.length) {
+                if (!visible && anchors[index].classList.contains("active")) {
+                    const newIndex = anchors.findIndex((x, i) => i !== index && !x.classList.contains("disabled") && getComputedStyle(x).display !== "none");
+                    if (newIndex >= 0)
+                        anchors[newIndex].click();
+                }
+                anchors[index].hidden = !visible;
+            }
+            return;
+        }
+
+        if (!visible && index === $(tabs).tabs?.('option', 'active')) {
+            $(tabs).tabs?.('option', 'active', 0);
+        }
+
+        $(tabs).children('ul').children('li').eq(index).toggle(visible);
+    }
+
+    /**
+     * Returns the key of the currently active tab.
+     * @param tabs - The tabs element (or array-like of elements).
+     * @returns The active tab key.
+     */
+    export function activeTabKey(tabs: ArrayLike<HTMLElement> | HTMLElement) {
+        tabs = isArrayLike(tabs) ? tabs[0] : tabs;
+        if (!tabs || typeof tabs === "string")
+            return;
+
+        const $ = getjQuery();
+        if (!$ || !$(tabs).data?.().uiTabs) {
+            return extractTabKey(tabs.querySelector<HTMLAnchorElement>(navLinkSelectorActive));
+        }
+
+        return extractTabKey($(tabs).children('ul')
+            .children('li')
+            .eq($(tabs).tabs?.('option', 'active'))
+            .children('a')[0]);
+    }
+
+    function extractTabKey(el: HTMLAnchorElement) {
+        if (!el)
+            return "";
+        const tabKey = el.dataset.tabkey;
+        if (tabKey)
+            return tabKey;
+        const href = el.getAttribute('href') ?? '';
+        const prefix = '_Tab';
+        const lastIndex = href.lastIndexOf(prefix);
+        if (lastIndex >= 0) {
+            return href.substring(lastIndex + prefix.length);
+        }
+        return href;
+    }
+
+    /**
+     * Returns a mapping of tab keys to their zero-based index.
+     * @param tabs - The tabs element (or array-like of elements).
+     * @returns A record mapping tab keys to indexes.
+     */
+    export function indexByKey(tabs: ArrayLike<HTMLElement> | HTMLElement): Record<string, number> {
+        const indexByKey: Record<string, number> = {};
+        tabs = isArrayLike(tabs) ? tabs[0] : tabs;
+        if (!tabs)
+            return indexByKey;
+
+        tabs.querySelectorAll<HTMLAnchorElement>(navLinkSelector).forEach(function (el, index) {
+            indexByKey[extractTabKey(el)] = index;
+        });
+
+        return indexByKey;
+    }
+
+    /**
+     * Selects (activates) the tab with the given key or index.
+     * @param tabs - The tabs element (or array-like of elements).
+     * @param tabKey - The tab key or index to select.
+     */
+    export function selectTab(tabs: HTMLElement | ArrayLike<HTMLElement>, tabKey: string | number) {
+        tabs = isArrayLike(tabs) ? tabs[0] : tabs;
+        if (!tabs || typeof tabs === "string")
+            return;
+
+        let index: number;
+        if (typeof tabKey === "number")
+            index = tabKey;
+        else {
+            const ibk = indexByKey(tabs);
+            if (!ibk)
+                return;
+            index = ibk[tabKey];
+            if (index == null) {
+                return;
+            }
+        }
+        const $ = getjQuery();
+        if (!$ || !$(tabs)?.data?.().uiTabs) {
+            const anchors = Array.from(tabs.querySelectorAll<HTMLAnchorElement>(navLinkSelector));
+            if (index < anchors.length) {
+                anchors[index].click();
+            }
+            return;
+        }
+        if (index !== $(tabs).tabs?.('option', 'active')) {
+            $(tabs).tabs?.('option', 'active', index);
+        }
+    }
+
+    /**
+     * Initializes a tabs control, using jQuery UI tabs if available, otherwise
+     * emulating them with Bootstrap.
+     * @param tabs - The tabs element (or array-like of elements).
+     * @param activeChange - Optional callback invoked when the active tab changes.
+     * @returns A Fluent wrapper around the tabs element, or null if invalid.
+     */
+    export function initialize(tabs: HTMLElement | ArrayLike<HTMLElement>, activeChange: () => void): Fluent<HTMLElement> {
+        tabs = isArrayLike(tabs) ? tabs[0] : tabs;
+        if (!tabs || typeof tabs === "string")
+            return null;
+
+        const $ = getjQuery();
+        if ($?.fn?.tabs) {
+            const t = $(tabs).tabs?.({});
+            if (activeChange)
+                t?.on('tabsactivate', activeChange);
+            return Fluent(tabs);
+        }
+        else {
+            // emulate UI tabs with bootstrap
+            const ul = tabs.matches("ul") ? tabs : tabs.querySelector(":scope > ul");
+            if (ul && !ul.classList.contains("nav-tabs") && !ul.classList.contains("nav-underline")) {
+                ul.classList.add("nav", "nav-tabs");
+
+                let activeLink: HTMLLinkElement;
+
+                ul.querySelectorAll(":scope > li").forEach(li => {
+                    li.classList.add("nav-item");
+
+                    const a = li.querySelector(":scope > a") as HTMLLinkElement;
+                    if (a) {
+                        a.classList.add("nav-link");
+                        a.dataset.bsToggle = "tab";
+                        a.setAttribute("role", "tab");
+                        if (a.classList.contains("ui-tabs-active")) {
+                            a.classList.add("active");
+                            a.classList.remove("ui-tabs-active");
+                            activeLink = a;
+                        }
+                    }
+                });
+
+                if (!activeLink) {
+                    activeLink = ul.querySelector(":scope > li > a");
+                    if (activeLink) {
+                        activeLink.classList.add("active");
+                    }
+                }
+
+                const container = tabs.appendChild(<div class="tab-content" />);
+                tabs.querySelectorAll(":scope>.tab-pane").forEach(pane => {
+                    pane.classList.add("pt-3");
+                    container.appendChild(pane);
+                    if (activeLink && activeLink.getAttribute("href") === "#" + pane.id) {
+                        pane.classList.add("show", "active");
+                    }
+                });
+            }
+
+            if (activeChange) {
+                Fluent.on(tabs, "shown.bs.tab", activeChange);
+            }
+
+            return Fluent(tabs);
+        }
+    }
+
+    /**
+     * Destroys a tabs control, cleaning up jQuery UI or Bootstrap tab instances.
+     * @param tabs - The tabs element (or array-like of elements).
+     */
+    export function destroy(tabs: HTMLElement | ArrayLike<HTMLElement>): void {
+        if (!tabs || typeof tabs === "string")
+            return;
+
+        const $ = getjQuery();
+        if ($?.(tabs).data?.().uiTabs) {
+            $(tabs)?.tabs?.("destroy");
+            return;
+        }
+
+        if (isArrayLike(tabs))
+            tabs = tabs[0];
+
+        if (tabs && typeof bootstrap !== "undefined" && bootstrap?.Tab?.getInstance) {
+            for (const anchor of Array.from(tabs.querySelectorAll<HTMLElement>(navLinkSelector))) {
+                const inst = bootstrap.Tab.getInstance(anchor);
+                if (inst && typeof inst.dispose === "function") {
+                    inst.dispose();
+                }
+            }
+        }
+    }
+}

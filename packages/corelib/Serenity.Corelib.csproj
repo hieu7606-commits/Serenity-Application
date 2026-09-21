@@ -1,0 +1,9 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <Description>NuGet version of @serenity-is/corelib NPM package</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\domwise\Serenity.DomWise.csproj" />
+    <ProjectReference Include="..\sleekgrid\Serenity.SleekGrid.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,188 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+
+using Microsoft.Extensions.Logging;
+using Serenity.Web.SpaServices;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+
+namespace Serenity.Web;
+
+/// <summary>
+/// Executes the <c>script</c> entries defined in a <c>package.json</c> file,
+/// capturing any output written to stdio.
+/// </summary>
+public sealed class NodeScriptRunner : IDisposable
+{
+    private IStartedProcess? npmProcess;
+    private EventedStreamReader StdOut { get; }
+    private EventedStreamReader StdErr { get; }
+
+    private static readonly Regex AnsiColorRegex = new("\x001b\\[[0-9;]*m", RegexOptions.None, TimeSpan.FromSeconds(1));
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NodeScriptRunner"/> class.
+    /// </summary>
+    /// <param name="scriptName">The name of the script to run.</param>
+    /// <param name="arguments">The arguments to pass to the script.</param>
+    /// <param name="workingDirectory">The working directory in which to run the script.</param>
+    /// <param name="envVars">Optional environment variables to set for the process.</param>
+    /// <param name="pkgManagerCommand">The package manager command. Defaults to <c>node</c>.</param>
+    /// <param name="diagnosticSource">The diagnostics source used to emit start events.</param>
+    /// <param name="applicationStoppingToken">A token that stops the process when the application is shutting down.</param>
+    /// <param name="processFactory">An optional factory used to create the process, mainly for testing.</param>
+    /// <exception cref="ArgumentException">One of the required arguments is null or empty.</exception>
+    public NodeScriptRunner(string scriptName,
+        string? arguments = null, string? workingDirectory = null,
+        IDictionary<string, string>? envVars = null, string pkgManagerCommand = "node",
+        DiagnosticSource? diagnosticSource = null,
+        Func<ProcessStartInfo, IStartedProcess>? processFactory = null,
+        CancellationToken applicationStoppingToken = default)
+    {
+        if (string.IsNullOrEmpty(workingDirectory))
+        {
+            throw new ArgumentException("Cannot be null or empty.", nameof(workingDirectory));
+        }
+
+        if (string.IsNullOrEmpty(scriptName))
+        {
+            throw new ArgumentException("Cannot be null or empty.", nameof(scriptName));
+        }
+
+        if (string.IsNullOrEmpty(pkgManagerCommand))
+        {
+            throw new ArgumentException("Cannot be null or empty.", nameof(pkgManagerCommand));
+        }
+
+        var exeToRun = pkgManagerCommand;
+        var isNode = exeToRun == "node";
+        var completeArguments = $"{(isNode ? "--run" : "run")} {scriptName} -- {arguments ?? string.Empty}";
+        if (!isNode && OperatingSystem.IsWindows())
+        {
+            // On Windows, the npm executable is a .cmd file, so it can't be executed
+            // directly (except with UseShellExecute=true, but that's no good, because
+            // it prevents capturing stdio). So we need to invoke it via "cmd /c".
+            exeToRun = "cmd";
+            completeArguments = $"/c {pkgManagerCommand} {completeArguments}";
+        }
+
+        var processStartInfo = new ProcessStartInfo(exeToRun)
+        {
+            Arguments = completeArguments,
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = workingDirectory
+        };
+
+        if (envVars != null)
+        {
+            foreach (var keyValuePair in envVars)
+            {
+                processStartInfo.Environment[keyValuePair.Key] = keyValuePair.Value;
+            }
+        }
+
+        try
+        {
+            npmProcess = processFactory?.Invoke(processStartInfo) ??
+                new StartedProcess(Process.Start(processStartInfo) ??
+                    throw new InvalidOperationException("Could not start NPM process!"));
+            npmProcess.EnableRaisingEvents = true;
+        }
+        catch (Exception ex)
+        {
+            var message = $"Failed to start '{pkgManagerCommand}'. To resolve this:.\n\n"
+                        + $"[1] Ensure that '{pkgManagerCommand}' is installed and can be found in one of the PATH directories.\n"
+                        + $"    Current PATH enviroment variable is: {Environment.GetEnvironmentVariable("PATH")}\n"
+                        + "    Make sure the executable is in one of those directories, or update your PATH.\n\n"
+                        + "[2] See the InnerException for further details of the cause.";
+            throw new InvalidOperationException(message, ex);
+        }
+
+        StdOut = new EventedStreamReader(npmProcess.StandardOutput);
+        StdErr = new EventedStreamReader(npmProcess.StandardError);
+
+        applicationStoppingToken.Register(((IDisposable)this).Dispose);
+
+        if (diagnosticSource != null && diagnosticSource.IsEnabled("Microsoft.AspNetCore.NodeServices.Npm.NpmStarted"))
+        {
+            WriteDiagnosticEvent(
+                diagnosticSource,
+                "Microsoft.AspNetCore.NodeServices.Npm.NpmStarted",
+                new
+                {
+                    processStartInfo,
+                    process = npmProcess
+                });
+        }
+
+        [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026",
+            Justification = "The values being passed into Write have the commonly used properties being preserved with DynamicDependency.")]
+        static void WriteDiagnosticEvent<TValue>(DiagnosticSource diagnosticSource, string name, TValue value)
+            => diagnosticSource.Write(name, value);
+    }
+
+    /// <summary>
+    /// Attaches the runner's output to the given logger.
+    /// </summary>
+    /// <param name="logger">The logger to write output to.</param>
+    public void AttachToLogger(ILogger logger)
+    {
+#pragma warning disable CA2254 // Template should be a static expression
+        // When the node task emits complete lines, pass them through to the real logger
+        StdOut.OnReceivedLine += line =>
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                // Node tasks commonly emit ANSI colors, but it wouldn't make sense to forward
+                // those to loggers (because a logger isn't necessarily any kind of terminal)
+                logger.LogInformation(StripAnsiColors(line));
+            }
+        };
+
+        StdErr.OnReceivedLine += line =>
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                // workaround for esbuild as it logs to stderr
+                if (line.StartsWith("Error:", StringComparison.OrdinalIgnoreCase))
+                    logger.LogError(StripAnsiColors(line));
+                else if (line.StartsWith("Warning:", StringComparison.OrdinalIgnoreCase) ||
+                    line.StartsWith("Warn:", StringComparison.OrdinalIgnoreCase))
+                    logger.LogWarning(StripAnsiColors(line));
+                else
+                    logger.LogInformation(StripAnsiColors(line));
+            }
+        };
+#pragma warning restore CA2254 // Template should be a static expression
+
+        /*
+        // But when it emits incomplete lines, assume this is progress information and
+        // hence just pass it through to StdOut regardless of logger config.
+        StdErr.OnReceivedChunk += chunk =>
+        {
+            Debug.Assert(chunk.Array != null);
+
+            var containsNewline = Array.IndexOf(
+                chunk.Array, '\n', chunk.Offset, chunk.Count) >= 0;
+            if (!containsNewline)
+            {
+                Console.Write(chunk.Array, chunk.Offset, chunk.Count);
+            }
+        };*/
+    }
+
+    private static string StripAnsiColors(string line)
+        => AnsiColorRegex.Replace(line, string.Empty);
+
+    void IDisposable.Dispose()
+    {
+        if (npmProcess != null && !npmProcess.HasExited)
+        {
+            npmProcess.Kill(entireProcessTree: true);
+            npmProcess = null;
+        }
+    }
+}

@@ -1,0 +1,94 @@
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http;
+
+namespace Serenity.Reporting;
+
+/// <summary>
+/// Implementation for <see cref="IReportCallbackInterceptor"/> that uses callback report cookie
+/// to impersonate / transient grant permissions
+/// </summary>
+public class HtmlReportCallbackUrlInterceptor(
+    ILogger<HtmlReportCallbackUrlBuilder> logger,
+    IPermissionService? permissionService = null,
+    IUserAccessor? userAccessor = null,
+    IUserClaimCreator? userClaimCreator = null,
+    IHttpContextAccessor? httpContextAccessor = null,
+    IDataProtectionProvider? dataProtectionProvider = null) : IReportCallbackInterceptor
+{
+    /// <summary>
+    /// Intercepts a report callback, applying impersonation and transient grants from the report auth cookie.
+    /// </summary>
+    /// <param name="renderOptions">The render options.</param>
+    /// <param name="action">The callback action.</param>
+    /// <returns>The report render result.</returns>
+    public ReportRenderResult InterceptCallback(ReportRenderOptions renderOptions, Func<ReportRenderOptions, ReportRenderResult> action)
+    {
+        ArgumentNullException.ThrowIfNull(renderOptions);
+
+        IImpersonator? impersonator = userAccessor as IImpersonator;
+        ITransientGrantor? transientGrantor = permissionService as ITransientGrantor;
+        bool undoImpersonate = false;
+        bool undoGrant = false;
+        try
+        {
+            try
+            {
+                if (dataProtectionProvider != null &&
+                    (impersonator != null || transientGrantor != null) &&
+                    httpContextAccessor?.HttpContext?.Request?.Cookies?.TryGetValue(
+                    HtmlReportCallbackUrlBuilder.ReportAuthCookieName, out var token) == true &&
+                    !string.IsNullOrEmpty(token))
+                {
+                    using var br = dataProtectionProvider.CreateProtector(HtmlReportCallbackUrlBuilder.ReportAuthCookieName)
+                        .UnprotectBinary(token);
+                    var dt = DateTime.FromBinary(br.ReadInt64());
+                    if (dt > DateTime.UtcNow)
+                    {
+                        var username = br.ReadString();
+                        if (impersonator != null &&
+                            !string.IsNullOrEmpty(username) &&
+                            userClaimCreator != null &&
+                            userAccessor?.User?.Identity?.Name != username)
+                        {
+                            var principal = userClaimCreator.CreatePrincipal(username, "ReportImpersonation");
+                            impersonator.Impersonate(principal);
+                            undoImpersonate = true;
+                        }
+
+                        if (transientGrantor != null)
+                        {
+                            var count = br.ReadInt32();
+                            if (count == -1)
+                            {
+                                transientGrantor.GrantAll();
+                                undoGrant = true;
+                            }
+                            else if (count > 0 && count < 10000)
+                            {
+                                var perms = new string[count];
+                                for (var i = 0; i < count; i++)
+                                    perms[i] = br.ReadString();
+                                transientGrantor.Grant(perms);
+                                undoGrant = true;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // ignore errors while decrypting / deserializing / applying ticket
+                logger.LogError(ex, "Error decrypting/applying report auth ticket");
+            }
+
+            return action(renderOptions);
+        }
+        finally
+        {
+            if (undoImpersonate)
+                impersonator?.UndoImpersonate();
+            if (undoGrant)
+                transientGrantor?.UndoGrant();
+        }
+    }
+}

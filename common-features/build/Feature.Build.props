@@ -1,0 +1,25 @@
+<Project>
+  <PropertyGroup>
+    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+    <AddAutoRefs Condition="'$(AddAutoRefs)' == ''">true</AddAutoRefs>
+    <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
+    <CompressionExcludePatterns>$(CompressionExcludePatterns);**\*.map;**\*.txt;</CompressionExcludePatterns>
+    <DefaultItemExcludes>node_modules\**;coverage\**;$(DefaultItemExcludes)</DefaultItemExcludes>
+    <DefineConstants Condition="'$(IsPublicDemo)'=='true'">$(DefineConstants);IsPublicDemo</DefineConstants>
+    <ESMAssetBasePath>/$(MSBuildProjectName)/esm</ESMAssetBasePath>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <RestoreNodeTypes>false</RestoreNodeTypes>
+    <SerenitySrc Condition="'$(SerenitySrc)' == ''">$(MSBuildThisFileDirectory)..\..\src\</SerenitySrc>
+    <StaticWebAssetBasePath>/$(MSBuildProjectName)</StaticWebAssetBasePath>
+    <TargetFramework>net10.0</TargetFramework>
+    <TypeScriptCompileBlocked>true</TypeScriptCompileBlocked>
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+    <SkipTSBuild Condition="'$(SkipTSBuild)' == '' And '$(DesignTimeBuild)' == 'true'">true</SkipTSBuild>
+    <RunTSBuild Condition="'$(RunTSBuild)' == '' And '$(SkipTSBuild)' != 'true'">true</RunTSBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Serenity.Net.Web" Version="$(SerenityVersion)" Condition="!Exists('$(SerenitySrc)web\Serenity.Net.Web.csproj') and '$(AddAutoRefs)' == 'true'" />
+    <ProjectReference Include="$(SerenitySrc)web\Serenity.Net.Web.csproj" Condition="Exists('$(SerenitySrc)web\Serenity.Net.Web.csproj') and '$(AddAutoRefs)' == 'true'" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,55 @@
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)..\build\Package.Build.props" Condition="Exists('$(MSBuildThisFileDirectory)..\build\Package.Build.props')" />
+  <PropertyGroup>
+    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+    <ArtifactsPath>$(MSBuildThisFileDirectory)..\artifacts</ArtifactsPath>
+    <DebugType>embedded</DebugType>
+    <DefaultItemExcludes>$(DefaultItemExcludes);package*.json;sergen.json;tsconfig.json;tsconfig.base.json;libman.json</DefaultItemExcludes>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ESBuild>$(MSBuildProjectDirectory)\node_modules\.bin\esbuild</ESBuild>
+    <GenerateDocumentationFile Condition="'$(GenerateDocumentationFile)' == ''">true</GenerateDocumentationFile>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ProduceReferenceAssembly>true</ProduceReferenceAssembly>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Serenity.Net.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="$(MSBuildProjectDirectory)\*.json" />
+    <Content Include="$(MSBuildProjectDirectory)\*.json">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+      <Pack>false</Pack>
+    </Content>
+    <Content Remove="texts\**\*.json" />
+    <EmbeddedResource Include="texts\**\*.json" WithCulture="false" Culture="" />
+    <NpmPackageFile Include="$(MSBuildProjectDirectory)\package.json" Condition="Exists('$(MSBuildProjectDirectory)\package.json')" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Serenity" />
+    <Using Include="Serenity.Abstractions" />
+    <Using Include="Serenity.ComponentModel" />
+    <Using Include="Serenity.Data" />
+    <Using Include="Serenity.Data.Mapping" Condition="'$(ProjectName)' != 'Serenity.Net.Core'" />
+    <Using Include="Serenity.Services" />
+    <Using Include="System" />
+    <Using Include="System.Collections.Concurrent" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.ComponentModel" />
+    <Using Include="System.Data" />
+    <Using Include="System.Globalization" />
+    <Using Include="System.Linq" />
+    <Using Include="System.Reflection" />
+    <Using Include="System.Security.Claims" />
+    <Using Include="System.Text" />
+    <Using Include="System.Text.Json.Serialization" />
+    <Using Include="System.Text.RegularExpressions" />
+    <Using Include="System.Threading" />
+    <Using Include="System.Threading.Tasks" />
+  </ItemGroup>
+</Project>

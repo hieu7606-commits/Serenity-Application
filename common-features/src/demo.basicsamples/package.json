@@ -1,0 +1,17 @@
+{
+  "name": "@serenity-is/demo.basicsamples",
+  "dependencies": {
+    "@serenity-is/demo.northwind": "workspace:*",
+    "@serenity-is/extensions": "workspace:*",
+    "chart.js": "catalog:serenity"
+  },
+  "main": "wwwroot/index.js",
+  "private": true,
+  "scripts": {
+    "build": "node ./tsbuild.js",
+    "build:watch": "node ./tsbuild.js --watch",
+    "test": "node --run build && vitest run",
+    "tsc": "tsc"
+  },
+  "type": "module"
+}

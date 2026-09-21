@@ -1,0 +1,45 @@
+import { BaseDialog, DialogButton, cancelDialogButton, okDialogButton, HtmlContentEditor, HtmlNoteContentEditor } from "@serenity-is/corelib";
+import { nsDemoNorthwind } from "../ServerTypes/Namespaces";
+
+export class NoteDialog<P = {}> extends BaseDialog<P> {
+    static override[Symbol.typeInfo] = this.registerClass(nsDemoNorthwind);
+
+    declare private textEditor: HtmlNoteContentEditor;
+
+    protected override renderContents(): any {
+        const id = this.useIdPrefix();
+        return (
+            <form id={id.Form} class="s-Form">
+                <div class="field">
+                    <textarea id={id.Text} class="editor required" ref={el => this.textEditor = new HtmlNoteContentEditor({ element: el })} />
+                    <div class="vx"></div>
+                </div>
+            </form>
+        );
+    }
+
+    protected override getDialogButtons(): DialogButton[] {
+        return [
+            okDialogButton({
+                click: (e: Event) => {
+                    if (!this.validateForm()) {
+                        e.preventDefault();
+                        return;
+                    }
+                    this.okClick && this.okClick();
+                }
+            }),
+            cancelDialogButton()
+        ];
+    }
+
+    get text(): string {
+        return this.textEditor.value;
+    }
+
+    set text(value: string) {
+        this.textEditor.value = value;
+    }
+
+    declare public okClick: () => void;
+}

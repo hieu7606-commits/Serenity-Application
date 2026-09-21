@@ -1,0 +1,17 @@
+{
+  "name": "@serenity-is/workspace-common-features",
+  "private": true,
+  "dependencies": {
+    "@serenity-is/corelib": "workspace:*",
+    "@serenity-is/sleekgrid": "workspace:*"
+  },
+  "devDependencies": {
+    "@serenity-is/domwise": "workspace:*",
+    "@serenity-is/tsbuild": "workspace:*",
+    "test-utils": "workspace:*"
+  },
+  "scripts": {
+    "all": "pnpm --filter ./** i && pnpm --filter ./** build && pnpm --filter ./** tsc && pnpm --filter ./** dts && pnpm --filter ./** test"
+  },
+  "type": "module"
+}

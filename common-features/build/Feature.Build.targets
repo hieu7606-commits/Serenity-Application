@@ -1,0 +1,27 @@
+<Project>
+  <ItemGroup>   
+    <TypeScriptCompile Remove="node_modules\**;obj\**;out\**;dist\**"></TypeScriptCompile>
+    <ProjectCapability Include="TypeScriptNuGet" />
+    <Content Update="$(MSBuildProjectDirectory)\coverage\**\*;$(MSBuildProjectDirectory)\out\**\*;$(MSBuildProjectDirectory)\package*.json;$(MSBuildProjectDirectory)\sergen*.json;$(MSBuildProjectDirectory)\ts*.json;$(MSBuildProjectDirectory)\test\**\*" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" Pack="false" />
+    <Content Update="$(MSBuildProjectDirectory)\package.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" Pack="true" PackagePath="" />
+    <None Update="$(MSBuildProjectDirectory)\coverage\**\*;$(MSBuildProjectDirectory)\out\**\*;$(MSBuildProjectDirectory)\jest*.js;$(MSBuildProjectDirectory)\tsbuild*.js;$(MSBuildProjectDirectory)\test\**\*" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" Pack="false" />
+    <None Include="$(MSBuildProjectDirectory)\dist\**" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" Pack="true" PackagePath="dist\" />
+  </ItemGroup>
+  <Import Project="$(SerenitySrc)web\Serenity.Net.Web.targets" Condition="'$(AddAutoRefs)' != 'false'" />
+  <Import Project="$(SerenitySrc)RestoreNpmPackages.targets" />
+  <Target Name="CompileProjectTSConfig" DependsOnTargets="NpmInstall;RestoreNodeTypes" BeforeTargets="ResolveProjectStaticWebAssets" AfterTargets="ResolveProjectReferences"
+          Condition="Exists('tsconfig.json') And '$(RunTSBuild)' == 'true'">
+    <ItemGroup>
+      <_ContentBeforeTSBuild Include="wwwroot\**\*" />
+    </ItemGroup>
+    <Message Text="Executing TypeScript compiler for $(ProjectName)..." Importance="high"></Message>
+    <Exec Command="node &quot;$(TSJavaScriptFile.Replace('build\\..\tools\', 'tools\'))&quot; -p ./tsconfig.json" Condition="!Exists('tsbuild.js')" ContinueOnError="true" />
+    <Exec Command="node --run build" Condition="Exists('tsbuild.js')" ContinueOnError="true" />
+    <ItemGroup>
+      <_ContentAfterTSBuild Include="wwwroot\**\*" Exclude="@(_ContentBeforeTSBuild)" />
+      <Content Include="@(_ContentAfterTSBuild)" Exclude="@(Content)" CopyToOutputDirectory="Never" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+      <_ContentBeforeTSBuild Remove="wwwroot\**\*" />
+      <Content Remove="@(_ContentBeforeTSBuild)" />
+    </ItemGroup>
+  </Target>
+</Project>
