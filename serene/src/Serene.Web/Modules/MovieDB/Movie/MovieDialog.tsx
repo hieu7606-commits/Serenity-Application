@@ -1,5 +1,6 @@
 import { EntityDialog } from '@serenity-is/corelib';
 import { MovieForm, MovieRow, MovieService } from '../../ServerTypes/MovieDB';
+import "./MovieDialog.css";
 
 /**
  * The add/edit window for one movie, with its Save, Delete and Close buttons.

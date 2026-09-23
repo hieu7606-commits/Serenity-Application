@@ -19,7 +19,7 @@
 // Read/Modify/ServiceLookupPermission: who may list, who may change, and who may use it as a
 // lookup in another form. Change these to a permission of your own once the module grows.
 [ConnectionKey("Default"), Module("MovieDB"), TableName("Movie")]
-[DisplayName("Movie"), InstanceName("Movie")]
+[DisplayName("Movies"), InstanceName("Movie")]
 [ReadPermission("Administration:General")]
 [ModifyPermission("Administration:General")]
 [ServiceLookupPermission("Administration:General")]
@@ -50,7 +50,7 @@ public sealed class MovieRow : Row<MovieRow.RowFields>, IIdRow, INameRow
     [DisplayName("Release Date")]
     public DateTime? ReleaseDate { get => fields.ReleaseDate[this]; set => fields.ReleaseDate[this] = value; }
 
-    [DisplayName("Runtime")]
+    [DisplayName("Runtime (mins)")]
     public int? Runtime { get => fields.Runtime[this]; set => fields.Runtime[this] = value; }
 
     /// <summary>
