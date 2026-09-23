@@ -37,14 +37,16 @@ public sealed class MovieRow : Row<MovieRow.RowFields>, IIdRow, INameRow
     [DisplayName("Title"), Size(200), NotNull, QuickSearch, NameProperty]
     public string? Title { get => fields.Title[this]; set => fields.Title[this] = value; }
 
-    [DisplayName("Description"), Size(1000)]
+    // QuickSearch on more than one field: the search box matches any of them ("contains" by default).
+    [DisplayName("Description"), Size(1000), QuickSearch]
     public string? Description { get => fields.Description[this]; set => fields.Description[this] = value; }
 
     // No Size attribute: the migration made this nvarchar(max), so there is no length to declare.
-    [DisplayName("Storyline")]
+    [DisplayName("Storyline"), QuickSearch]
     public string? Storyline { get => fields.Storyline[this]; set => fields.Storyline[this] = value; }
 
-    [DisplayName("Year")]
+    // Only an exact, purely numeric search term matches: "1999" does, "19" or "abc" do not.
+    [DisplayName("Year"), QuickSearch(SearchType.Equals, numericOnly: 1)]
     public int? Year { get => fields.Year[this]; set => fields.Year[this] = value; }
 
     [DisplayName("Release Date")]

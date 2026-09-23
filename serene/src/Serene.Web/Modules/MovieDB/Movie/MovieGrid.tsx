@@ -1,4 +1,4 @@
-import { EntityGrid } from '@serenity-is/corelib';
+import { EntityGrid, QuickSearchField, localText } from '@serenity-is/corelib';
 import { MovieColumns, MovieRow, MovieService } from '../../ServerTypes/MovieDB';
 import { MovieDialog } from './MovieDialog';
 
@@ -28,4 +28,18 @@ export class MovieGrid extends EntityGrid<MovieRow> {
     protected override getRowDefinition() { return MovieRow; }
     // Services/MovieDB/Movie, generated from the [Route] on MovieEndpoint.
     protected override getService() { return MovieService.baseUrl; }
+
+    // Adds a dropdown to the search box for picking a single field; "All" (empty name) searches
+    // every [QuickSearch] field. Names come from MovieRow.Fields so a typo fails to compile, and
+    // titles from the Db.MovieDB.Movie.* local texts so they follow translations.
+    protected override getQuickSearchFields(): QuickSearchField[] {
+        const txt = (s: string) => localText(`Db.${MovieRow.localTextPrefix}.${s}`);
+        const fld = MovieRow.Fields;
+        return [
+            { name: "", title: "All" },
+            { name: fld.Description, title: txt(fld.Description) },
+            { name: fld.Storyline, title: txt(fld.Storyline) },
+            { name: fld.Year, title: txt(fld.Year) }
+        ];
+    }
 }
