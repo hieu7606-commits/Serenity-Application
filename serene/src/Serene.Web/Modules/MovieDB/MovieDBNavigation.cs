@@ -4,10 +4,14 @@
 using Serenity.Navigation;
 using MyPages = Serene.MovieDB.Pages;
 
-// Arguments: sort order, then "Section/Item" - the slash is what puts Movie under a MovieDB
-// heading. The page type supplies both the URL and the permission, so an entry never outlives the
-// page or shows to someone who cannot open it.
+// Declaring the section explicitly is what lets it have its own order and icon; an implicit one
+// takes the lowest order of its children and no icon. 6000 places it above Northwind (7000) and
+// Administration (9000).
+[assembly: NavigationMenu(6000, "Movie Database", icon: "fa-film")]
+
+// Arguments: sort order, then "Section/Item" - the slash is what puts Movies under the Movie
+// Database heading. The page type supplies both the URL and the permission, so an entry never
+// outlives the page or shows to someone who cannot open it.
 //
-// int.MaxValue keeps this last in the sidebar; give it a smaller number to move it up, and pass an
-// icon such as "fa-film" in place of null to replace the default bullet.
-[assembly: NavigationLink(int.MaxValue, "MovieDB/Movie", typeof(MyPages.MoviePage), icon: null)]
+// The order only ranks this link among its siblings in the section, not across the whole sidebar.
+[assembly: NavigationLink(6100, "Movie Database/Movies", typeof(MyPages.MoviePage), icon: "fa-video-camera")]
