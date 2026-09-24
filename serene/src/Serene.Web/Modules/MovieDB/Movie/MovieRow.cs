@@ -55,6 +55,11 @@ public sealed class MovieRow : Row<MovieRow.RowFields>, IIdRow, INameRow
     [DisplayName("Runtime (mins)")]
     public int? Runtime { get => fields.Runtime[this]; set => fields.Runtime[this] = value; }
 
+    // NotNull makes it required, so DefaultValue pre-selects Film in a new record's dialog rather
+    // than leaving an empty dropdown that fails validation.
+    [DisplayName("Kind"), NotNull, DefaultValue(MovieKind.Film)]
+    public MovieKind? Kind { get => fields.Kind[this]; set => fields.Kind[this] = value; }
+
     /// <summary>
     /// The field objects the properties above read and write through. One instance is shared by
     /// every MovieRow, which is why the properties take <c>this</c> as an indexer: the field holds
@@ -73,6 +78,7 @@ public sealed class MovieRow : Row<MovieRow.RowFields>, IIdRow, INameRow
         public Int32Field Year = null!;
         public DateTimeField ReleaseDate = null!;
         public Int32Field Runtime = null!;
+        public EnumField<MovieKind> Kind = null!;
 
     }
 }

@@ -81,6 +81,24 @@ namespace texts {
                 export const Username: string;
             }
         }
+        namespace MovieDB {
+            export function asKey(): typeof MovieDB;
+            export function asTry(): typeof MovieDB;
+            namespace Movie {
+                export function asKey(): typeof Movie;
+                export function asTry(): typeof Movie;
+                export const Description: string;
+                export const EntityPlural: string;
+                export const EntitySingular: string;
+                export const Kind: string;
+                export const MovieId: string;
+                export const ReleaseDate: string;
+                export const Runtime: string;
+                export const Storyline: string;
+                export const Title: string;
+                export const Year: string;
+            }
+        }
     }
     export declare namespace Forms {
         export function asKey(): typeof Forms;
@@ -187,6 +205,9 @@ const Texts: typeof texts = proxyTexts({}, '', {
             User: {},
             UserPermission: {},
             UserRole: {}
+        },
+        MovieDB: {
+            Movie: {}
         }
     },
     Forms: {

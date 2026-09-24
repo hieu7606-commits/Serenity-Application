@@ -1,5 +1,5 @@
-import { SaveRequest, SaveResponse, ServiceOptions, DeleteRequest, DeleteResponse, RetrieveRequest, RetrieveResponse, ListRequest, ListResponse, serviceRequest } from '@serenity-is/corelib';
-import { MovieRow } from './MovieRow';
+﻿import { DeleteRequest, DeleteResponse, ListRequest, ListResponse, RetrieveRequest, RetrieveResponse, SaveRequest, SaveResponse, ServiceOptions, serviceRequest } from "@serenity-is/corelib";
+import { MovieRow } from "./MovieRow";
 
 export namespace MovieService {
     export const baseUrl = 'MovieDB/Movie';
@@ -19,14 +19,14 @@ export namespace MovieService {
     } as const;
 
     [
-        'Create', 
-        'Update', 
-        'Delete', 
-        'Retrieve', 
+        'Create',
+        'Update',
+        'Delete',
+        'Retrieve',
         'List'
     ].forEach(x => {
-        (<any>MovieService)[x] = function (r, s, o) { 
-            return serviceRequest(baseUrl + '/' + x, r, s, o); 
+        (<any>MovieService)[x] = function (r, s, o) {
+            return serviceRequest(baseUrl + '/' + x, r, s, o);
         };
     });
 }
