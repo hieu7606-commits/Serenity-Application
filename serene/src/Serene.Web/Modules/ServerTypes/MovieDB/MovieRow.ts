@@ -10,8 +10,7 @@ export interface MovieRow {
     ReleaseDate?: string;
     Runtime?: number;
     Kind?: MovieKind;
-    GenreId?: number;
-    GenreName?: string;
+    GenreList?: number[];
 }
 
 export abstract class MovieRow {

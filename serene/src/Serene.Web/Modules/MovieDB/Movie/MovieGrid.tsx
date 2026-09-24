@@ -1,6 +1,10 @@
 import { EntityGrid, QuickSearchField, localText } from '@serenity-is/corelib';
 import { MovieColumns, MovieRow, MovieService } from '../../ServerTypes/MovieDB';
 import { MovieDialog } from './MovieDialog';
+// Side-effect import: nothing here uses the class by name - MovieColumns.cs refers to it by its
+// registered key - but without the import it is never bundled or registered, and the grid throws
+// "The formatter class ... was not found" when it builds the Genres column.
+import './GenreListFormatter';
 
 /**
  * The Movie list: the table, its toolbar, paging, sorting, the search box and the Excel button.
