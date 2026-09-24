@@ -32,5 +32,9 @@ public class MovieColumns
     public DateTime? ReleaseDate { get; set; }
     [DisplayName("Runtime in Minutes"), Width(150), AlignRight]
     public int? Runtime { get; set; }
+    // QuickFilter on the name column still filters by GenreId - Serenity follows the join back to
+    // it and reuses its lookup editor for the filter dropdown.
+    [Width(100), QuickFilter]
+    public string? GenreName { get; set; }
     public MovieKind? Kind { get; set; }
 }

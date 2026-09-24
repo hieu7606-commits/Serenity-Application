@@ -27,6 +27,10 @@
 // knowing anything about Movie: that is how a dialog titles itself and how a lookup shows a label.
 public sealed class MovieRow : Row<MovieRow.RowFields>, IIdRow, INameRow
 {
+    // Alias for the Genre join. The join is only added to a query when a field that comes through
+    // it - GenreName - is actually requested.
+    const string jGenre = nameof(jGenre);
+
     // Identity: the database assigns it. IdProperty: the column IIdRow points at, so this is what
     // Retrieve and Delete requests are keyed by.
     [DisplayName("Movie Id"), Identity, IdProperty]
@@ -60,6 +64,17 @@ public sealed class MovieRow : Row<MovieRow.RowFields>, IIdRow, INameRow
     [DisplayName("Kind"), NotNull, DefaultValue(MovieKind.Film)]
     public MovieKind? Kind { get => fields.Kind[this]; set => fields.Kind[this] = value; }
 
+    // ForeignKey(typeof(GenreRow)) takes the table and key from the row, so neither is spelled out.
+    // LookupEditor is declared here rather than on the form so every form showing GenreId gets the
+    // dropdown. InplaceAdd adds a button that opens GenreDialog to create a missing genre.
+    [DisplayName("Genre"), ForeignKey(typeof(GenreRow)), LeftJoin(jGenre)]
+    [LookupEditor(typeof(GenreRow), InplaceAdd = true)]
+    public int? GenreId { get => fields.GenreId[this]; set => fields.GenreId[this] = value; }
+
+    // Not a Movie column: read from the joined Genre table, which makes the row behave like a view.
+    [DisplayName("Genre"), Origin(jGenre, nameof(GenreRow.Name))]
+    public string? GenreName { get => fields.GenreName[this]; set => fields.GenreName[this] = value; }
+
     /// <summary>
     /// The field objects the properties above read and write through. One instance is shared by
     /// every MovieRow, which is why the properties take <c>this</c> as an indexer: the field holds
@@ -79,6 +94,8 @@ public sealed class MovieRow : Row<MovieRow.RowFields>, IIdRow, INameRow
         public DateTimeField ReleaseDate = null!;
         public Int32Field Runtime = null!;
         public EnumField<MovieKind> Kind = null!;
+        public Int32Field GenreId = null!;
+        public StringField GenreName = null!;
 
     }
 }

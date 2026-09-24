@@ -15,3 +15,4 @@ using MyPages = Serene.MovieDB.Pages;
 //
 // The order only ranks this link among its siblings in the section, not across the whole sidebar.
 [assembly: NavigationLink(6100, "Movie Database/Movies", typeof(MyPages.MoviePage), icon: "fa-video-camera")]
+[assembly: NavigationLink(6200, "Movie Database/Genres", typeof(MyPages.GenrePage), icon: "fa-thumb-tack")]

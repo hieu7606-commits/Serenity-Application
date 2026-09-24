@@ -84,12 +84,22 @@ namespace texts {
         namespace MovieDB {
             export function asKey(): typeof MovieDB;
             export function asTry(): typeof MovieDB;
+            namespace Genre {
+                export function asKey(): typeof Genre;
+                export function asTry(): typeof Genre;
+                export const EntityPlural: string;
+                export const EntitySingular: string;
+                export const GenreId: string;
+                export const Name: string;
+            }
             namespace Movie {
                 export function asKey(): typeof Movie;
                 export function asTry(): typeof Movie;
                 export const Description: string;
                 export const EntityPlural: string;
                 export const EntitySingular: string;
+                export const GenreId: string;
+                export const GenreName: string;
                 export const Kind: string;
                 export const MovieId: string;
                 export const ReleaseDate: string;
@@ -207,6 +217,7 @@ const Texts: typeof texts = proxyTexts({}, '', {
             UserRole: {}
         },
         MovieDB: {
+            Genre: {},
             Movie: {}
         }
     },

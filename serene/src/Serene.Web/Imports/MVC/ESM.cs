@@ -5,6 +5,8 @@ namespace Serene.MVC;
 /// <summary>Provides paths to ECMAScript module entry points.</summary>
 public static partial class ESM
 {
+    /// <summary>The module path for the <c>GenrePage</c> entry point.</summary>
+    public const string GenrePage = "~/esm/Modules/MovieDB/Genre/GenrePage.js";
     /// <summary>The module path for the <c>LanguagePage</c> entry point.</summary>
     public const string LanguagePage = "~/esm/Modules/Administration/Language/LanguagePage.js";
     /// <summary>The module path for the <c>LoginPage</c> entry point.</summary>
@@ -89,6 +91,13 @@ public static partial class ESM
         /// <summary>Provides module entry points in the <c>Modules/MovieDB</c> folder.</summary>
         public static partial class MovieDB
         {
+            /// <summary>Provides module entry points in the <c>Modules/MovieDB/Genre</c> folder.</summary>
+            public static partial class Genre
+            {
+                /// <summary>The module path for the <c>GenrePage</c> entry point.</summary>
+                public const string GenrePage = "~/esm/Modules/MovieDB/Genre/GenrePage.js";
+            }
+
             /// <summary>Provides module entry points in the <c>Modules/MovieDB/Movie</c> folder.</summary>
             public static partial class Movie
             {

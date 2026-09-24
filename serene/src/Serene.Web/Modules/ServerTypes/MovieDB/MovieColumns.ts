@@ -11,6 +11,7 @@ export interface MovieColumns {
     Year: Column<MovieRow>;
     ReleaseDate: Column<MovieRow>;
     Runtime: Column<MovieRow>;
+    GenreName: Column<MovieRow>;
     Kind: Column<MovieRow>;
 }
 
