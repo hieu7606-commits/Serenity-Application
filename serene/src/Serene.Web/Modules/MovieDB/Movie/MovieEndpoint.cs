@@ -56,7 +56,7 @@ public class MovieEndpoint : ServiceEndpoint
     }
 
     [HttpPost, AuthorizeList(typeof(MyRow))]
-    public Task<ListResponse<MyRow>> List(IDbConnection connection, ListRequest request,
+    public Task<ListResponse<MyRow>> List(IDbConnection connection, MovieListRequest request,
         [FromServices] IMovieListHandler handler, CancellationToken cancellationToken = default)
     {
         return handler.ListAsync(connection, request, cancellationToken);
@@ -66,7 +66,7 @@ public class MovieEndpoint : ServiceEndpoint
     // reflects the current filters, then renders the rows through MovieColumns - which is why the
     // spreadsheet has the same columns, in the same order, as the screen.
     [HttpPost, AuthorizeList(typeof(MyRow))]
-    public async Task<FileContentResult> ListExcel(IDbConnection connection, ListRequest request,
+    public async Task<FileContentResult> ListExcel(IDbConnection connection, MovieListRequest request,
         [FromServices] IMovieListHandler handler,
         [FromServices] IExcelExporter exporter, CancellationToken cancellationToken = default)
     {

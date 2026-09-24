@@ -1,5 +1,5 @@
-import { EntityGrid, QuickSearchField, localText } from '@serenity-is/corelib';
-import { MovieColumns, MovieRow, MovieService } from '../../ServerTypes/MovieDB';
+import { EntityGrid, LookupEditor, QuickSearchField, localText, tryFirst } from '@serenity-is/corelib';
+import { MovieColumns, MovieListRequest, MovieRow, MovieService } from '../../ServerTypes/MovieDB';
 import { MovieDialog } from './MovieDialog';
 // Side-effect import: nothing here uses the class by name - MovieColumns.cs refers to it by its
 // registered key - but without the import it is never bundled or registered, and the grid throws
@@ -45,5 +45,26 @@ export class MovieGrid extends EntityGrid<MovieRow> {
             { name: fld.Storyline, title: txt(fld.Storyline) },
             { name: fld.Year, title: txt(fld.Year) }
         ];
+    }
+
+    // The quick filters come from [QuickFilter] in MovieColumns.cs. The Genres one is rerouted:
+    // instead of writing Criteria/EqualityFilter on GenreList, its selection goes into
+    // MovieListRequest.Genres, which MovieListHandler turns into an EXISTS on MovieGenres.
+    protected override getQuickFilters() {
+        const items = super.getQuickFilters();
+
+        const genreListFilter = tryFirst(items, x =>
+            x.field == MovieRow.Fields.GenreList);
+
+        genreListFilter && (genreListFilter.handler = h => {
+            const request = (h.request as MovieListRequest);
+            // The editor reports ids as strings.
+            const values = (h.widget as LookupEditor).values;
+            request.Genres = values.map(x => parseInt(x, 10));
+            // Skip the default handling, which would add its own filter on GenreList.
+            h.handled = true;
+        });
+
+        return items;
     }
 }
