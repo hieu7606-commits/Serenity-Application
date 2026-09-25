@@ -1,0 +1,4 @@
+/* Two fields do not need a full-width dialog. */
+.s-MovieDB-MovieCastEditDialog > .modal-dialog {
+  width: 450px;
+}

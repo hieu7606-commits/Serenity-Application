@@ -24,6 +24,11 @@ public class MovieForm
     // Free text reads better in a multi-line box than the single-line input a string implies.
     [TextAreaEditor(Rows = 3)]
     public string? Description { get; set; }
+    // MovieCastEditor is the cast grid (MovieCastEditor.tsx); sergen generates this attribute from
+    // it. SkipNameCheck is left over from before CastList existed on MovieRow - harmless now, and
+    // kept to match the tutorial.
+    [DisplayName("Cast"), MovieCastEditor, SkipNameCheck]
+    public List<MovieCastRow>? CastList { get; set; }
     [TextAreaEditor(Rows = 8)]
     public string? Storyline { get; set; }
     public int? Year { get; set; }

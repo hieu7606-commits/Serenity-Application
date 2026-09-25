@@ -1,9 +1,11 @@
 ﻿import { DateEditor, EnumEditor, initFormType, IntegerEditor, LookupEditor, PrefixedContext, StringEditor, TextAreaEditor } from "@serenity-is/corelib";
+import { MovieCastEditor } from "../../MovieDB/MovieCast/MovieCastEditor";
 import { MovieKind } from "./MovieKind";
 
 export interface MovieForm {
     Title: StringEditor;
     Description: TextAreaEditor;
+    CastList: MovieCastEditor;
     Storyline: TextAreaEditor;
     Year: IntegerEditor;
     ReleaseDate: DateEditor;
@@ -25,6 +27,7 @@ export class MovieForm extends PrefixedContext {
             initFormType(MovieForm, [
                 'Title', StringEditor,
                 'Description', TextAreaEditor,
+                'CastList', MovieCastEditor,
                 'Storyline', TextAreaEditor,
                 'Year', IntegerEditor,
                 'ReleaseDate', DateEditor,

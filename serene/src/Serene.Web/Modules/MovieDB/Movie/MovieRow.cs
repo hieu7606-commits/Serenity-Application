@@ -70,6 +70,15 @@ public sealed class MovieRow : Row<MovieRow.RowFields>, IIdRow, INameRow
     [LinkingSetRelation(typeof(MovieGenresRow), nameof(MovieGenresRow.MovieId), nameof(MovieGenresRow.GenreId))]
     public List<int>? GenreList { get => fields.GenreList[this]; set => fields.GenreList[this] = value; }
 
+    // The cast, edited in memory in the movie dialog and sent with the movie. NotMapped: there is
+    // no column. MasterDetailRelation does the plumbing the handlers would otherwise need - loads
+    // the list on retrieve, inserts/updates/deletes MovieCast rows to match it on save, and removes
+    // them when the movie is deleted, all in the movie's transaction. ColumnsType makes retrieve
+    // select MovieCastColumns' fields, so PersonFullName (a joined field) arrives filled in.
+    [MasterDetailRelation(foreignKey: nameof(MovieCastRow.MovieId), ColumnsType = typeof(Columns.MovieCastColumns))]
+    [DisplayName("Cast List"), NotMapped]
+    public List<MovieCastRow>? CastList { get => fields.CastList[this]; set => fields.CastList[this] = value; }
+
     /// <summary>
     /// The field objects the properties above read and write through. One instance is shared by
     /// every MovieRow, which is why the properties take <c>this</c> as an indexer: the field holds
@@ -90,6 +99,7 @@ public sealed class MovieRow : Row<MovieRow.RowFields>, IIdRow, INameRow
         public Int32Field Runtime = null!;
         public EnumField<MovieKind> Kind = null!;
         public ListField<int> GenreList = null!;
+        public RowListField<MovieCastRow> CastList = null!;
 
     }
 }

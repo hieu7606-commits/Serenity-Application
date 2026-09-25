@@ -13,6 +13,8 @@ public static partial class ESM
     public const string LoginPage = "~/esm/Modules/Membership/Account/Login/LoginPage.js";
     /// <summary>The module path for the <c>MoviePage</c> entry point.</summary>
     public const string MoviePage = "~/esm/Modules/MovieDB/Movie/MoviePage.js";
+    /// <summary>The module path for the <c>PersonPage</c> entry point.</summary>
+    public const string PersonPage = "~/esm/Modules/MovieDB/Person/PersonPage.js";
     /// <summary>The module path for the <c>RolePage</c> entry point.</summary>
     public const string RolePage = "~/esm/Modules/Administration/Role/RolePage.js";
     /// <summary>The module path for the <c>ScriptInit</c> entry point.</summary>
@@ -103,6 +105,13 @@ public static partial class ESM
             {
                 /// <summary>The module path for the <c>MoviePage</c> entry point.</summary>
                 public const string MoviePage = "~/esm/Modules/MovieDB/Movie/MoviePage.js";
+            }
+
+            /// <summary>Provides module entry points in the <c>Modules/MovieDB/Person</c> folder.</summary>
+            public static partial class Person
+            {
+                /// <summary>The module path for the <c>PersonPage</c> entry point.</summary>
+                public const string PersonPage = "~/esm/Modules/MovieDB/Person/PersonPage.js";
             }
         }
     }

@@ -95,6 +95,7 @@ namespace texts {
             namespace Movie {
                 export function asKey(): typeof Movie;
                 export function asTry(): typeof Movie;
+                export const CastList: string;
                 export const Description: string;
                 export const EntityPlural: string;
                 export const EntitySingular: string;
@@ -107,6 +108,18 @@ namespace texts {
                 export const Title: string;
                 export const Year: string;
             }
+            namespace MovieCast {
+                export function asKey(): typeof MovieCast;
+                export function asTry(): typeof MovieCast;
+                export const Character: string;
+                export const EntityPlural: string;
+                export const EntitySingular: string;
+                export const MovieCastId: string;
+                export const MovieId: string;
+                export const MovieTitle: string;
+                export const PersonFullName: string;
+                export const PersonId: string;
+            }
             namespace MovieGenres {
                 export function asKey(): typeof MovieGenres;
                 export function asTry(): typeof MovieGenres;
@@ -117,6 +130,20 @@ namespace texts {
                 export const MovieGenreId: string;
                 export const MovieId: string;
                 export const MovieTitle: string;
+            }
+            namespace Person {
+                export function asKey(): typeof Person;
+                export function asTry(): typeof Person;
+                export const BirthDate: string;
+                export const BirthPlace: string;
+                export const EntityPlural: string;
+                export const EntitySingular: string;
+                export const FirstName: string;
+                export const FullName: string;
+                export const Gender: string;
+                export const Height: string;
+                export const LastName: string;
+                export const PersonId: string;
             }
         }
     }
@@ -229,7 +256,9 @@ const Texts: typeof texts = proxyTexts({}, '', {
         MovieDB: {
             Genre: {},
             Movie: {},
-            MovieGenres: {}
+            MovieCast: {},
+            MovieGenres: {},
+            Person: {}
         }
     },
     Forms: {
